@@ -36,25 +36,15 @@ var backendFunctions = {
   // ============================================
   loginUsuario: async function(email, password) {
     try {
-      var result = await _supabase.auth.signInWithPassword({ email: email, password: password });
-      if (result.error) {
+      // Login directo contra tabla usuarios (demo sin RLS)
+      var perfil = await _supabase.from('usuarios').select('*').eq('email', email).eq('password_visible', password).single();
+      if (perfil.error || !perfil.data) {
         return { success: false, error: 'Credenciales invalidas. Verifica tu correo y contrasena.' };
-      }
-      // Buscar perfil del usuario
-      var perfil = await _supabase.from('usuarios').select('*').eq('auth_id', result.data.user.id).single();
-      if (perfil.error) {
-        // Buscar por email como fallback
-        perfil = await _supabase.from('usuarios').select('*').eq('email', email).single();
-        if (perfil.error) {
-          return { success: false, error: 'Usuario no tiene perfil configurado.' };
-        }
-        // Vincular auth_id
-        await _supabase.from('usuarios').update({ auth_id: result.data.user.id }).eq('id', perfil.data.id);
       }
       return {
         success: true,
         data: {
-          token: result.data.session.access_token,
+          token: 'demo-token',
           usuario: perfil.data
         }
       };
@@ -64,7 +54,6 @@ var backendFunctions = {
   },
 
   cerrarSesion: async function() {
-    await _supabase.auth.signOut();
     return { success: true };
   },
 
