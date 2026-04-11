@@ -3,7 +3,7 @@
 // Mantiene la interfaz google.script.run para compatibilidad
 // ============================================
 
-var SUPABASE_URL = 'https://loezdutvrucnoebhofjt.supabase.co';
+var SUPABASE_URL = 'https://loezdutwrucnoebhofjt.supabase.co';
 var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxvZXpkdXR3cnVjbm9lYmhvZmp0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5MTY0MzEsImV4cCI6MjA5MTQ5MjQzMX0.CvJnaQ1T-MryjiimGnjo2gRgIKmYBuYPE-n1691n7Ek';
 
 // Cargar SDK de Supabase
