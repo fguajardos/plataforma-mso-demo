@@ -1073,6 +1073,22 @@ function _mkRunner() {
       if (prop === 'withFailureHandler') {
         return function() { return _mkRunner(); };
       }
+      // Llamada directa sin withSuccessHandler (ej: feSaveTxt -> actualizarPregunta)
+      // Ejecuta el backend fire-and-forget
+      var handler = backendFunctions[prop];
+      if (handler) {
+        return function() {
+          var args = [].slice.call(arguments);
+          try {
+            var result = handler.apply(null, args);
+            if (result && typeof result.then === 'function') {
+              result.catch(function(e) { console.error('[SUPABASE] direct call', prop, e); });
+            }
+          } catch (e) {
+            console.error('[SUPABASE] direct call', prop, e);
+          }
+        };
+      }
       return function() { return _mkRunner(); };
     }
   });
