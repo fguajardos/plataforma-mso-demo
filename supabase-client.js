@@ -573,39 +573,82 @@ var backendFunctions = {
       console.error('[listarArchivosPrograma] error', r.error);
       return { success: true, data: [] };
     }
-    var data = (r.data || []).map(function(a) {
+    var data = [];
+    for (var i = 0; i < (r.data || []).length; i++) {
+      var a = r.data[i];
       a.subido_por_nombre = '';
       a.fecha_subida = a.created_at;
-      return a;
-    });
+      if (a.storage_path) {
+        try {
+          var signed = await _supabase.storage.from('archivos-programa')
+            .createSignedUrl(a.storage_path, 3600);
+          if (signed.data && signed.data.signedUrl) {
+            a.drive_url = signed.data.signedUrl;
+          }
+        } catch (e) {
+          console.warn('[listarArchivosPrograma] signed url error', e);
+        }
+      }
+      data.push(a);
+    }
     return { success: true, data: data };
   },
 
   subirArchivoPrograma: async function(token, progId, datos) {
-    // Si no vino progId como 2do arg (signature vieja), asumir que datos trae programa_id
     if (typeof progId === 'object' && progId !== null) {
       datos = progId;
       progId = datos.programa_id;
     }
     datos = datos || {};
+    var nombre = datos.nombre || datos.nombre_archivo || 'archivo';
+    var storage_path = '';
+
+    if (datos.contenido) {
+      try {
+        var byteChars = atob(datos.contenido);
+        var bytes = new Uint8Array(byteChars.length);
+        for (var i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+        var blob = new Blob([bytes], { type: datos.mimeType || 'application/octet-stream' });
+        var cleanName = nombre.replace(/[^a-zA-Z0-9._-]/g, '_');
+        var path = progId + '/' + Date.now() + '_' + cleanName;
+        var up = await _supabase.storage.from('archivos-programa')
+          .upload(path, blob, { contentType: datos.mimeType || 'application/octet-stream', upsert: false });
+        if (up.error) {
+          console.error('[subirArchivoPrograma] upload error', up.error);
+          return { success: false, error: 'Error al subir archivo: ' + up.error.message };
+        }
+        storage_path = up.data.path;
+      } catch (e) {
+        console.error('[subirArchivoPrograma] blob error', e);
+        return { success: false, error: 'Error procesando el archivo: ' + e.message };
+      }
+    }
+
     var payload = {
       programa_id: progId || datos.programa_id,
-      nombre_archivo: datos.nombre || datos.nombre_archivo || 'archivo',
+      nombre_archivo: nombre,
       tipo: datos.tipo || 'material',
       mensaje: datos.mensaje || '',
       drive_url: datos.drive_url || '',
-      storage_path: datos.storage_path || '',
+      storage_path: storage_path,
       visible_participantes: datos.visible_participantes !== false
     };
     var r = await _supabase.from('archivos_programa').insert(payload).select().single();
     if (r.error) {
-      console.error('[subirArchivoPrograma] error', r.error);
+      console.error('[subirArchivoPrograma] db error', r.error);
+      if (storage_path) {
+        await _supabase.storage.from('archivos-programa').remove([storage_path]);
+      }
       return { success: false, error: r.error.message };
     }
     return { success: true, data: { id: r.data.id } };
   },
 
   eliminarArchivoPrograma: async function(token, id) {
+    var info = await _supabase.from('archivos_programa').select('storage_path').eq('id', id).single();
+    if (info.data && info.data.storage_path) {
+      await _supabase.storage.from('archivos-programa').remove([info.data.storage_path]);
+    }
     await _supabase.from('archivos_programa').delete().eq('id', id);
     return { success: true };
   },
