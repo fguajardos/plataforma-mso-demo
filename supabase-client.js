@@ -562,18 +562,21 @@ var backendFunctions = {
   },
 
   actualizarPregunta: async function(token, id, datos) {
-    // Whitelist de campos validos en la tabla preguntas
     var valid = ['texto_pregunta','tipo_respuesta','competencia_id','foco_desarrollo',
                  'opcion_nivel_1','opcion_nivel_2','opcion_nivel_3','opcion_nivel_4',
                  'obligatoria','orden'];
     var payload = {};
     Object.keys(datos || {}).forEach(function(k) {
-      if (valid.indexOf(k) !== -1) payload[k] = datos[k];
+      if (valid.indexOf(k) === -1) return;
+      var v = datos[k];
+      // Normalizar UUIDs vacios a null
+      if (k === 'competencia_id' && (v === '' || v === undefined)) v = null;
+      payload[k] = v;
     });
     if (Object.keys(payload).length === 0) return { success: true };
     var r = await _supabase.from('preguntas').update(payload).eq('id', id);
     if (r.error) {
-      console.error('[actualizarPregunta] error', r.error);
+      console.error('[actualizarPregunta] error', r.error, 'payload:', payload);
       return { success: false, error: r.error.message };
     }
     return { success: true };
