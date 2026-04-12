@@ -401,12 +401,38 @@ var backendFunctions = {
   },
 
   importarCompetenciasExcel: async function(token, progId, competencias) {
-    await _supabase.from('competencias').delete().eq('programa_id', progId);
+    var del = await _supabase.from('competencias').delete().eq('programa_id', progId);
+    if (del.error) {
+      console.error('[importarCompetenciasExcel] error borrando previas', del.error);
+      return { success: false, error: del.error.message };
+    }
     var inserts = (competencias || []).map(function(c, i) {
-      return Object.assign({ programa_id: progId, orden: i + 1, estado: 'activa' }, c);
+      return {
+        programa_id: progId,
+        orden: i + 1,
+        estado: 'activa',
+        nombre: c.nombre || '',
+        descripcion: c.descripcion || '',
+        foco_desarrollo: c.foco_desarrollo || '',
+        nivel_1_texto: c.nivel_1_texto || '',
+        nivel_2_texto: c.nivel_2_texto || '',
+        nivel_3_texto: c.nivel_3_texto || '',
+        nivel_4_texto: c.nivel_4_texto || '',
+        interpretacion_nivel_1: c.interpretacion_nivel_1 || '',
+        interpretacion_nivel_2: c.interpretacion_nivel_2 || '',
+        interpretacion_nivel_3: c.interpretacion_nivel_3 || '',
+        interpretacion_nivel_4: c.interpretacion_nivel_4 || ''
+      };
     });
-    if (inserts.length > 0) await _supabase.from('competencias').insert(inserts);
-    return { success: true, data: { message: competencias.length + ' competencias importadas.' } };
+    if (inserts.length === 0) {
+      return { success: true, data: { message: '0 competencias importadas.' } };
+    }
+    var r = await _supabase.from('competencias').insert(inserts).select();
+    if (r.error) {
+      console.error('[importarCompetenciasExcel] error insertando', r.error);
+      return { success: false, error: r.error.message };
+    }
+    return { success: true, data: { message: (r.data || []).length + ' competencias importadas.' } };
   },
 
   // ============================================
