@@ -268,7 +268,7 @@ var backendFunctions = {
     p.cliente_nombre = p.clientes ? p.clientes.nombre : '';
 
     var parts = await _supabase.from('participantes_programa')
-      .select('*, usuarios(id, nombre, email, cargo, estado, rol)')
+      .select('*, usuarios!participantes_programa_usuario_id_fkey(id, nombre, email, cargo, estado, rol)')
       .eq('programa_id', progId);
 
     var comps = await _supabase.from('competencias').select('*').eq('programa_id', progId).order('orden');
@@ -323,7 +323,7 @@ var backendFunctions = {
 
   listarParticipantesPrograma: async function(token, progId) {
     var r = await _supabase.from('participantes_programa')
-      .select('*, usuarios(id, nombre, email, cargo, rol)')
+      .select('*, usuarios!participantes_programa_usuario_id_fkey(id, nombre, email, cargo, rol)')
       .eq('programa_id', progId);
     var data = (r.data || []).map(function(a) {
       if (!a.usuarios) return null;
