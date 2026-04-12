@@ -567,20 +567,41 @@ var backendFunctions = {
   // ARCHIVOS
   // ============================================
   listarArchivosPrograma: async function(token, progId) {
-    var r = await _supabase.from('archivos_programa').select('*, usuarios(nombre)')
+    var r = await _supabase.from('archivos_programa').select('*')
       .eq('programa_id', progId).order('created_at', { ascending: false });
+    if (r.error) {
+      console.error('[listarArchivosPrograma] error', r.error);
+      return { success: true, data: [] };
+    }
     var data = (r.data || []).map(function(a) {
-      a.subido_por_nombre = a.usuarios ? a.usuarios.nombre : '';
+      a.subido_por_nombre = '';
       a.fecha_subida = a.created_at;
-      delete a.usuarios;
       return a;
     });
     return { success: true, data: data };
   },
 
-  subirArchivoPrograma: async function(token, datos) {
-    var r = await _supabase.from('archivos_programa').insert(datos).select().single();
-    if (r.error) return { success: false, error: r.error.message };
+  subirArchivoPrograma: async function(token, progId, datos) {
+    // Si no vino progId como 2do arg (signature vieja), asumir que datos trae programa_id
+    if (typeof progId === 'object' && progId !== null) {
+      datos = progId;
+      progId = datos.programa_id;
+    }
+    datos = datos || {};
+    var payload = {
+      programa_id: progId || datos.programa_id,
+      nombre_archivo: datos.nombre || datos.nombre_archivo || 'archivo',
+      tipo: datos.tipo || 'material',
+      mensaje: datos.mensaje || '',
+      drive_url: datos.drive_url || '',
+      storage_path: datos.storage_path || '',
+      visible_participantes: datos.visible_participantes !== false
+    };
+    var r = await _supabase.from('archivos_programa').insert(payload).select().single();
+    if (r.error) {
+      console.error('[subirArchivoPrograma] error', r.error);
+      return { success: false, error: r.error.message };
+    }
     return { success: true, data: { id: r.data.id } };
   },
 
@@ -777,10 +798,6 @@ var backendFunctions = {
   generarInformeConsolidado: async function() { return { success: true, data: { url: '#', mensaje: 'Informe generado' } }; },
   generarInformeIndividual: async function() { return { success: true, data: { url: '#', mensaje: 'Informe generado' } }; },
   exportarDatosExcel: async function() { return { success: true, data: { url: '#' } }; },
-  listarArchivosPrograma: async function(token, progId) {
-    var r = await _supabase.from('archivos_programa').select('*').eq('programa_id', progId).order('created_at', { ascending: false });
-    return { success: true, data: r.data || [] };
-  },
   listarInformesGenerados: async function() { return { success: true, data: [] }; },
   listarCronograma: async function() { return { success: true, data: { hitos: [], fases: {} } }; },
   obtenerResultadosEncuesta: async function() { return { success: true, data: { respuestas: [], estadisticas: {} } }; },
