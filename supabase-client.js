@@ -492,6 +492,7 @@ var backendFunctions = {
     if (pregs.error) {
       console.error('[obtenerEncuestaCompleta] error preguntas', pregs.error);
     }
+    console.log('[obtenerEncuestaCompleta] preguntas cargadas:', (pregs.data || []).length, pregs.data);
     return {
       success: true,
       data: {
