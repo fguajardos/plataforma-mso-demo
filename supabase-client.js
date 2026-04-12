@@ -763,36 +763,64 @@ var backendFunctions = {
   actualizarPreguntasEncuesta: async function() { return { success: true }; },
   importarParticipantesExcel: async function(token, progId, participantes) {
     var count = 0;
+    var errores = [];
+
+    async function upsertUsuario(nombre, email, rol, cargo, password) {
+      if (!email) return null;
+      var existing = await _supabase.from('usuarios').select('*').eq('email', email).maybeSingle();
+      if (existing.data) return existing.data;
+      var ins = await _supabase.from('usuarios').insert({
+        nombre: nombre || email, email: email,
+        rol: rol, cargo: cargo || '', estado: 'Activo',
+        password_visible: password || '123456'
+      }).select().single();
+      if (ins.error) {
+        console.error('[importarParticipantesExcel] error creando usuario', email, ins.error);
+        errores.push(email + ': ' + ins.error.message);
+        return null;
+      }
+      return ins.data;
+    }
+
+    async function asociar(usuarioId, rolPrograma, liderId) {
+      var assoc = await _supabase.from('participantes_programa').upsert({
+        programa_id: progId, usuario_id: usuarioId,
+        rol_programa: rolPrograma, lider_id: liderId || null
+      }, { onConflict: 'programa_id,usuario_id' });
+      if (assoc.error) {
+        console.error('[importarParticipantesExcel] error asociando', usuarioId, assoc.error);
+        errores.push('asociacion ' + usuarioId + ': ' + assoc.error.message);
+        return false;
+      }
+      return true;
+    }
+
     for (var i = 0; i < (participantes || []).length; i++) {
       var p = participantes[i];
-      // Crear lider
-      var liderR = await _supabase.from('usuarios').insert({
-        nombre: p.nombre || '', email: p.email || '',
-        rol: 'jefatura', cargo: p.cargo || '', estado: 'Activo'
-      }).select().single();
-      if (liderR.data) {
-        await _supabase.from('participantes_programa').insert({
-          programa_id: progId, usuario_id: liderR.data.id,
-          rol_programa: p.rol || 'lider'
-        });
-        count++;
-        // Crear colaborador si existe
-        if (p.colaborador_nombre && p.colaborador_email) {
-          var colabR = await _supabase.from('usuarios').insert({
-            nombre: p.colaborador_nombre, email: p.colaborador_email,
-            rol: 'participante', estado: 'Activo'
-          }).select().single();
-          if (colabR.data) {
-            await _supabase.from('participantes_programa').insert({
-              programa_id: progId, usuario_id: colabR.data.id,
-              rol_programa: 'colaborador', lider_id: liderR.data.id
-            });
-            count++;
-          }
+      if (!p.email || !p.nombre) continue;
+
+      var lider = await upsertUsuario(p.nombre, p.email, 'jefatura', p.cargo, p.password);
+      if (!lider) continue;
+
+      var ok = await asociar(lider.id, p.rol || 'lider', null);
+      if (ok) count++;
+
+      if (p.colaborador_nombre && p.colaborador_email) {
+        var colab = await upsertUsuario(p.colaborador_nombre, p.colaborador_email, 'participante', '', null);
+        if (colab) {
+          var ok2 = await asociar(colab.id, 'colaborador', lider.id);
+          if (ok2) count++;
         }
       }
     }
-    return { success: true, data: { message: count + ' participantes importados.' } };
+
+    if (errores.length) console.warn('[importarParticipantesExcel] errores:', errores);
+    return {
+      success: true,
+      data: {
+        message: count + ' participantes importados.' + (errores.length ? ' (' + errores.length + ' con errores - revisa consola)' : '')
+      }
+    };
   },
   asignarColaborador: async function(token, progId, datos) {
     var colabR = await _supabase.from('usuarios').insert({
