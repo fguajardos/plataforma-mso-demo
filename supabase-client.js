@@ -483,16 +483,24 @@ var backendFunctions = {
 
   obtenerEncuestaCompleta: async function(token, id) {
     var enc = await _supabase.from('encuestas').select('*').eq('id', id).single();
-    var pregs = await _supabase.from('preguntas').select('*').eq('encuesta_id', id).order('orden');
+    if (enc.error) {
+      console.error('[obtenerEncuestaCompleta] error encuesta', enc.error);
+      return { success: false, error: enc.error.message };
+    }
+    var pregs = await _supabase.from('preguntas').select('*')
+      .eq('encuesta_id', id).order('orden', { ascending: true });
+    if (pregs.error) {
+      console.error('[obtenerEncuestaCompleta] error preguntas', pregs.error);
+    }
     return {
       success: true,
       data: {
-        id: enc.data ? enc.data.id : id,
-        nombre: enc.data ? enc.data.nombre : 'Encuesta',
-        instrucciones: enc.data ? enc.data.instrucciones : '',
-        tipo: enc.data ? enc.data.tipo : 'pre',
-        tipo_cuestionario: enc.data ? enc.data.tipo_cuestionario : 'autoevaluacion',
-        estado: enc.data ? enc.data.estado : 'borrador',
+        id: enc.data.id,
+        nombre: enc.data.nombre,
+        instrucciones: enc.data.instrucciones,
+        tipo: enc.data.tipo,
+        tipo_cuestionario: enc.data.tipo_cuestionario,
+        estado: enc.data.estado,
         preguntas: pregs.data || []
       }
     };
@@ -526,7 +534,14 @@ var backendFunctions = {
   // PREGUNTAS
   // ============================================
   agregarPregunta: async function(token, datos) {
-    var r = await _supabase.from('preguntas').insert({
+    // Calcular siguiente orden
+    var existing = await _supabase.from('preguntas').select('orden')
+      .eq('encuesta_id', datos.encuesta_id).order('orden', { ascending: false }).limit(1);
+    var nextOrden = 1;
+    if (existing.data && existing.data.length > 0 && existing.data[0].orden) {
+      nextOrden = existing.data[0].orden + 1;
+    }
+    var payload = {
       encuesta_id: datos.encuesta_id,
       texto_pregunta: datos.texto_pregunta || '',
       tipo_respuesta: datos.tipo_respuesta || 'niveles_competencia',
@@ -535,14 +550,32 @@ var backendFunctions = {
       opcion_nivel_1: datos.opcion_nivel_1 || '',
       opcion_nivel_2: datos.opcion_nivel_2 || '',
       opcion_nivel_3: datos.opcion_nivel_3 || '',
-      opcion_nivel_4: datos.opcion_nivel_4 || ''
-    }).select().single();
-    if (r.error) return { success: false, error: r.error.message };
+      opcion_nivel_4: datos.opcion_nivel_4 || '',
+      orden: nextOrden
+    };
+    var r = await _supabase.from('preguntas').insert(payload).select().single();
+    if (r.error) {
+      console.error('[agregarPregunta] error', r.error);
+      return { success: false, error: r.error.message };
+    }
     return { success: true, data: { id: r.data.id } };
   },
 
   actualizarPregunta: async function(token, id, datos) {
-    await _supabase.from('preguntas').update(datos).eq('id', id);
+    // Whitelist de campos validos en la tabla preguntas
+    var valid = ['texto_pregunta','tipo_respuesta','competencia_id','foco_desarrollo',
+                 'opcion_nivel_1','opcion_nivel_2','opcion_nivel_3','opcion_nivel_4',
+                 'obligatoria','orden'];
+    var payload = {};
+    Object.keys(datos || {}).forEach(function(k) {
+      if (valid.indexOf(k) !== -1) payload[k] = datos[k];
+    });
+    if (Object.keys(payload).length === 0) return { success: true };
+    var r = await _supabase.from('preguntas').update(payload).eq('id', id);
+    if (r.error) {
+      console.error('[actualizarPregunta] error', r.error);
+      return { success: false, error: r.error.message };
+    }
     return { success: true };
   },
 
