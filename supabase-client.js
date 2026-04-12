@@ -795,11 +795,11 @@ var backendFunctions = {
       if (!email) return null;
       var existing = await _supabase.from('usuarios').select('*').eq('email', email).maybeSingle();
       if (existing.data) return existing.data;
-      var ins = await _supabase.from('usuarios').insert({
+      var payload = {
         nombre: nombre || email, email: email,
-        rol: rol, cargo: cargo || '', estado: 'Activo',
-        password_visible: password || '123456'
-      }).select().single();
+        rol: rol, cargo: cargo || '', estado: 'Activo'
+      };
+      var ins = await _supabase.from('usuarios').insert(payload).select().single();
       if (ins.error) {
         console.error('[importarParticipantesExcel] error creando usuario', email, ins.error);
         errores.push(email + ': ' + ins.error.message);
