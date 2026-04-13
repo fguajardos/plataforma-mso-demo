@@ -9,21 +9,43 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
 // Cargar SDK de Supabase
 var _supabaseReady = false;
 var _supabase = null;
+var _supabaseReadyPromise = null;
 
 function initSupabase() {
+  if (_supabaseReady) return true;
   if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
     _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     _supabaseReady = true;
     console.log('%c[MSO] Supabase conectado', 'color: #10B981; font-weight: bold;');
-  } else {
-    console.error('[MSO] SDK de Supabase no cargado');
+    return true;
   }
+  return false;
 }
 
-// Esperar a que el SDK cargue
-document.addEventListener('DOMContentLoaded', function() {
-  setTimeout(initSupabase, 100);
+// Intentar inicializar inmediatamente (script ya cargado)
+initSupabase();
+
+// Promesa que se resuelve cuando Supabase esta listo
+_supabaseReadyPromise = new Promise(function(resolve) {
+  if (_supabaseReady) { resolve(); return; }
+  var attempts = 0;
+  var interval = setInterval(function() {
+    attempts++;
+    if (initSupabase()) {
+      clearInterval(interval);
+      resolve();
+    } else if (attempts > 100) { // 5 segundos max
+      clearInterval(interval);
+      console.error('[MSO] Timeout esperando SDK de Supabase');
+      resolve();
+    }
+  }, 50);
 });
+
+async function ensureSupabaseReady() {
+  if (_supabaseReady) return;
+  await _supabaseReadyPromise;
+}
 
 // ============================================
 // BACKEND FUNCTIONS (reemplazan backendFunctions de mock.js)
@@ -1174,20 +1196,22 @@ function _mkRunner() {
                         }
                         var handler = backendFunctions[fn];
                         if (handler) {
-                          try {
-                            var result = handler.apply(null, args);
-                            if (result && typeof result.then === 'function') {
-                              result.then(function(r) { onOk(r); }).catch(function(e) {
-                                console.error('[SUPABASE ERROR]', fn, e);
-                                if (onErr) onErr(e);
-                              });
-                            } else {
-                              setTimeout(function() { onOk(result); }, 50);
+                          ensureSupabaseReady().then(function() {
+                            try {
+                              var result = handler.apply(null, args);
+                              if (result && typeof result.then === 'function') {
+                                result.then(function(r) { onOk(r); }).catch(function(e) {
+                                  console.error('[SUPABASE ERROR]', fn, e);
+                                  if (onErr) onErr(e);
+                                });
+                              } else {
+                                setTimeout(function() { onOk(result); }, 50);
+                              }
+                            } catch(e) {
+                              console.error('[SUPABASE ERROR]', fn, e);
+                              if (onErr) onErr(e);
                             }
-                          } catch(e) {
-                            console.error('[SUPABASE ERROR]', fn, e);
-                            if (onErr) onErr(e);
-                          }
+                          });
                         } else {
                           console.warn('[SUPABASE] Not implemented:', fn);
                           setTimeout(function() { onOk({ success: true, data: [] }); }, 50);
@@ -1207,14 +1231,16 @@ function _mkRunner() {
                 }
                 var handler = backendFunctions[p2];
                 if (handler) {
-                  try {
-                    var result = handler.apply(null, args);
-                    if (result && typeof result.then === 'function') {
-                      result.then(function(r) { onOk(r); }).catch(function(e) { console.error('[SUPABASE]', p2, e); });
-                    } else {
-                      setTimeout(function() { onOk(result); }, 50);
-                    }
-                  } catch(e) { console.error('[SUPABASE]', p2, e); }
+                  ensureSupabaseReady().then(function() {
+                    try {
+                      var result = handler.apply(null, args);
+                      if (result && typeof result.then === 'function') {
+                        result.then(function(r) { onOk(r); }).catch(function(e) { console.error('[SUPABASE]', p2, e); });
+                      } else {
+                        setTimeout(function() { onOk(result); }, 50);
+                      }
+                    } catch(e) { console.error('[SUPABASE]', p2, e); }
+                  });
                 } else {
                   setTimeout(function() { onOk({ success: true, data: [] }); }, 50);
                 }
@@ -1227,19 +1253,20 @@ function _mkRunner() {
         return function() { return _mkRunner(); };
       }
       // Llamada directa sin withSuccessHandler (ej: feSaveTxt -> actualizarPregunta)
-      // Ejecuta el backend fire-and-forget
       var handler = backendFunctions[prop];
       if (handler) {
         return function() {
           var args = [].slice.call(arguments);
-          try {
-            var result = handler.apply(null, args);
-            if (result && typeof result.then === 'function') {
-              result.catch(function(e) { console.error('[SUPABASE] direct call', prop, e); });
+          ensureSupabaseReady().then(function() {
+            try {
+              var result = handler.apply(null, args);
+              if (result && typeof result.then === 'function') {
+                result.catch(function(e) { console.error('[SUPABASE] direct call', prop, e); });
+              }
+            } catch (e) {
+              console.error('[SUPABASE] direct call', prop, e);
             }
-          } catch (e) {
-            console.error('[SUPABASE] direct call', prop, e);
-          }
+          });
         };
       }
       return function() { return _mkRunner(); };
