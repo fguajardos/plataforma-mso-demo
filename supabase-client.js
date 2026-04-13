@@ -182,7 +182,14 @@ var backendFunctions = {
   },
 
   activarPrograma: async function(token, id) {
-    await _supabase.from('programas').update({ estado: 'activo' }).eq('id', id);
+    var r = await _supabase.from('programas').update({ estado: 'activo' }).eq('id', id);
+    if (r.error) return { success: false, error: r.error.message };
+    return { success: true };
+  },
+
+  desactivarPrograma: async function(token, id) {
+    var r = await _supabase.from('programas').update({ estado: 'suspendido' }).eq('id', id);
+    if (r.error) return { success: false, error: r.error.message };
     return { success: true };
   },
 

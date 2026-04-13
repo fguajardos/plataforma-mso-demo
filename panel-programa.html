@@ -72,6 +72,12 @@
         <button id="btn-activar-programa" class="btn btn-success btn-sm hidden" onclick="activarProgramaPanel()">
           Activar programa
         </button>
+        <button id="btn-desactivar-programa" class="btn btn-warning btn-sm hidden" onclick="desactivarProgramaPanel()">
+          Suspender programa
+        </button>
+        <button id="btn-reactivar-programa" class="btn btn-success btn-sm hidden" onclick="activarProgramaPanel()">
+          Reactivar programa
+        </button>
       </div>
     </div>
   </div>
@@ -322,12 +328,19 @@
     document.getElementById('header-programa-tipo').textContent = tipo;
     document.getElementById('header-programa-objetivo').textContent = objetivo;
 
-    // Mostrar/ocultar boton activar
+    // Mostrar/ocultar botones segun estado
     var btnActivar = document.getElementById('btn-activar-programa');
+    var btnDesactivar = document.getElementById('btn-desactivar-programa');
+    var btnReactivar = document.getElementById('btn-reactivar-programa');
+    btnActivar.classList.add('hidden');
+    btnDesactivar.classList.add('hidden');
+    btnReactivar.classList.add('hidden');
     if (estado === 'diseno') {
       btnActivar.classList.remove('hidden');
-    } else {
-      btnActivar.classList.add('hidden');
+    } else if (estado === 'activo') {
+      btnDesactivar.classList.remove('hidden');
+    } else if (estado === 'suspendido') {
+      btnReactivar.classList.remove('hidden');
     }
   }
 
@@ -532,6 +545,38 @@
         showToast('Error al activar programa: ' + err.message, 'error');
       })
       .activarPrograma(App.token, panelProgramaId);
+  }
+
+  /**
+   * Suspende el programa (disponible en estado "activo").
+   */
+  function desactivarProgramaPanel() {
+    if (!panelProgramaId) return;
+
+    if (!confirm('¿Estas seguro de que deseas suspender este programa? Los participantes no podran acceder mientras este suspendido.')) {
+      return;
+    }
+
+    var btn = document.getElementById('btn-desactivar-programa');
+    var originalText = btn.innerHTML;
+    btnLoading(btn, true);
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        btnLoading(btn, false, originalText);
+        if (result && result.error) {
+          showToast(result.error, 'error');
+          return;
+        }
+        showToast('Programa suspendido', 'success');
+        panelData.estado = 'suspendido';
+        renderHeader(panelData);
+      })
+      .withFailureHandler(function(err) {
+        btnLoading(btn, false, originalText);
+        showToast('Error al suspender: ' + err.message, 'error');
+      })
+      .desactivarPrograma(App.token, panelProgramaId);
   }
 
   /**
