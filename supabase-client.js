@@ -328,9 +328,13 @@ var backendFunctions = {
     var data = (r.data || []).map(function(a) {
       if (!a.usuarios) return null;
       return {
-        id: a.usuarios.id, nombre: a.usuarios.nombre,
-        email: a.usuarios.email, cargo: a.usuarios.cargo,
-        rol_programa: a.rol_programa
+        id: a.usuarios.id,
+        usuario_id: a.usuarios.id,
+        nombre: a.usuarios.nombre,
+        email: a.usuarios.email,
+        cargo: a.usuarios.cargo,
+        rol_programa: a.rol_programa,
+        lider_id: a.lider_id || null
       };
     }).filter(Boolean);
     return { success: true, data: data };

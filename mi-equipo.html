@@ -67,7 +67,17 @@
         return;
       }
 
-      var participantes = rPart.data.filter(function(p) { return p.rol_programa === 'participante'; });
+      var todosParticipantes = rPart.data || [];
+      var participantes;
+      if (esAdmin) {
+        // Admin ve todos los colaboradores
+        participantes = todosParticipantes.filter(function(p) { return p.rol_programa === 'colaborador'; });
+      } else {
+        // Lider solo ve sus colaboradores asignados
+        participantes = todosParticipantes.filter(function(p) {
+          return p.rol_programa === 'colaborador' && p.lider_id === userId;
+        });
+      }
 
       if (participantes.length === 0) {
         document.getElementById('equipo-lista').innerHTML =
