@@ -898,30 +898,240 @@ var backendFunctions = {
   // DASHBOARD / KPIs
   // ============================================
   obtenerKPIsPrograma: async function(token, progId) {
-    var parts = await _supabase.from('participantes_programa').select('id', { count: 'exact' });
-    var total = parts.count || 0;
+    if (!progId) {
+      return { success: true, data: { totalParticipantes: 0, observacionesRealizadas: 0, tasaRespuestaPre: 0, tasaRespuestaPost: 0, nivelAplicacion: 0 } };
+    }
+    // Participantes
+    var parts = await _supabase.from('participantes_programa').select('usuario_id, rol_programa').eq('programa_id', progId);
+    var asociados = parts.data || [];
+    var lideres = asociados.filter(function(a) { return a.rol_programa === 'lider'; });
+    var colaboradores = asociados.filter(function(a) { return a.rol_programa === 'colaborador'; });
+    var total = asociados.length;
+
+    // Encuestas del programa agrupadas por tipo (pre/post) y tipo_cuestionario
+    var encs = await _supabase.from('encuestas').select('id, tipo, tipo_cuestionario').eq('programa_id', progId);
+    var encList = encs.data || [];
+    function idsPorTipo(t) {
+      return encList.filter(function(e) { return e.tipo === t; }).map(function(e) { return e.id; });
+    }
+    function idsPorTipoYCuest(t, tc) {
+      return encList.filter(function(e) { return e.tipo === t && (e.tipo_cuestionario || 'autoevaluacion') === tc; }).map(function(e) { return e.id; });
+    }
+    var preIds = idsPorTipo('pre');
+    var postIds = idsPorTipo('post');
+
+    async function contarEvaluadoresUnicos(encIds) {
+      if (encIds.length === 0) return 0;
+      var r = await _supabase.from('respuestas').select('evaluador_id').in('encuesta_id', encIds);
+      var set = {};
+      (r.data || []).forEach(function(x) { set[x.evaluador_id] = true; });
+      return Object.keys(set).length;
+    }
+
+    function esperadasPara(ids) {
+      // Para encuestas auto esperamos 1 respuesta por lider; para co, 1 por colaborador
+      var esp = 0;
+      ids.forEach(function(encId) {
+        var e = encList.find(function(x) { return x.id === encId; });
+        if (!e) return;
+        var tc = e.tipo_cuestionario || 'autoevaluacion';
+        esp += (tc === 'coevaluacion') ? colaboradores.length : lideres.length;
+      });
+      return esp;
+    }
+
+    var completadasPre = await contarEvaluadoresUnicos(preIds);
+    var completadasPost = await contarEvaluadoresUnicos(postIds);
+    // Calcular con mas granularidad para distinguir auto y co
+    var espPre = esperadasPara(preIds);
+    var espPost = esperadasPara(postIds);
+    // Simplificado: usar suma de evaluadores unicos por encuesta como "respuestas" esperadas / 1
+    // Pero para tasa, necesitamos respuestas completas por encuesta
+    // Hacer un recuento mas preciso: por cada encuesta, contar evaluadores distintos
+    async function totalEvalSumPorEncuestas(ids) {
+      var tot = 0;
+      for (var i = 0; i < ids.length; i++) {
+        var n = await contarEvaluadoresUnicos([ids[i]]);
+        tot += n;
+      }
+      return tot;
+    }
+    var realPre = await totalEvalSumPorEncuestas(preIds);
+    var realPost = await totalEvalSumPorEncuestas(postIds);
+
+    var tasaPre = espPre > 0 ? Math.round((realPre / espPre) * 100) : 0;
+    var tasaPost = espPost > 0 ? Math.round((realPost / espPost) * 100) : 0;
+
+    // Nivel de aplicacion: promedio de respuestas POST (valor 1-4) normalizado a 0-100%
+    var nivelAplicacion = 0;
+    if (postIds.length > 0) {
+      var resp = await _supabase.from('respuestas').select('valor').in('encuesta_id', postIds);
+      var vals = (resp.data || []).map(function(r) {
+        var n = parseFloat(r.valor);
+        return isNaN(n) ? null : n;
+      }).filter(function(v) { return v !== null && v >= 1 && v <= 4; });
+      if (vals.length > 0) {
+        var sum = vals.reduce(function(a, b) { return a + b; }, 0);
+        var avg = sum / vals.length; // 1..4
+        nivelAplicacion = Math.round(((avg - 1) / 3) * 100); // 0..100
+      }
+    }
+
     return {
       success: true,
       data: {
         totalParticipantes: total,
         observacionesRealizadas: 0,
-        tasaRespuestaPre: 0,
-        tasaRespuestaPost: 0,
-        nivelAplicacion: 0
+        tasaRespuestaPre: tasaPre,
+        tasaRespuestaPost: tasaPost,
+        nivelAplicacion: nivelAplicacion
       }
     };
   },
 
-  obtenerComparacionPrePost: async function() {
-    return { success: true, data: [] };
+  obtenerComparacionPrePost: async function(token, progId) {
+    if (!progId) return { success: true, data: [] };
+    // Competencias del programa
+    var comps = await _supabase.from('competencias').select('id, nombre').eq('programa_id', progId).order('orden');
+    if (!comps.data || comps.data.length === 0) return { success: true, data: [] };
+
+    // Encuestas con tipo
+    var encs = await _supabase.from('encuestas').select('id, tipo').eq('programa_id', progId);
+    var encMap = {};
+    (encs.data || []).forEach(function(e) { encMap[e.id] = e.tipo; });
+
+    // Preguntas con su competencia_id para las encuestas del programa
+    var encIds = Object.keys(encMap);
+    if (encIds.length === 0) return { success: true, data: comps.data.map(function(c) { return { conducta_nombre: c.nombre, promedioPre: 0, promedioPost: 0, variacion: 0 }; }) };
+
+    var pregs = await _supabase.from('preguntas').select('id, competencia_id, encuesta_id').in('encuesta_id', encIds);
+    var pregMap = {};
+    (pregs.data || []).forEach(function(p) { pregMap[p.id] = p; });
+
+    // Respuestas de esas preguntas
+    var pregIds = Object.keys(pregMap);
+    if (pregIds.length === 0) return { success: true, data: comps.data.map(function(c) { return { conducta_nombre: c.nombre, promedioPre: 0, promedioPost: 0, variacion: 0 }; }) };
+
+    var resps = await _supabase.from('respuestas').select('pregunta_id, valor').in('pregunta_id', pregIds);
+
+    // Agrupar valores por competencia y tipo (pre/post)
+    var acum = {};
+    (resps.data || []).forEach(function(r) {
+      var p = pregMap[r.pregunta_id];
+      if (!p || !p.competencia_id) return;
+      var tipo = encMap[p.encuesta_id];
+      if (tipo !== 'pre' && tipo !== 'post') return;
+      var n = parseFloat(r.valor);
+      if (isNaN(n)) return;
+      if (!acum[p.competencia_id]) acum[p.competencia_id] = { pre: [], post: [] };
+      acum[p.competencia_id][tipo].push(n);
+    });
+
+    function avg(arr) {
+      if (!arr || arr.length === 0) return 0;
+      var s = arr.reduce(function(a, b) { return a + b; }, 0);
+      return Math.round((s / arr.length) * 10) / 10;
+    }
+
+    var data = comps.data.map(function(c) {
+      var a = acum[c.id] || { pre: [], post: [] };
+      var pre = avg(a.pre);
+      var post = avg(a.post);
+      return {
+        conducta_nombre: c.nombre,
+        promedioPre: pre,
+        promedioPost: post,
+        variacion: pre > 0 ? Math.round(((post - pre) / pre) * 100) : 0
+      };
+    });
+    return { success: true, data: data };
   },
 
-  obtenerMapaCalor: async function() {
-    return { success: true, data: [] };
+  obtenerMapaCalor: async function(token, progId) {
+    if (!progId) return { success: true, data: [] };
+    // Lideres del programa
+    var parts = await _supabase.from('participantes_programa')
+      .select('usuario_id, rol_programa, usuarios!participantes_programa_usuario_id_fkey(nombre)')
+      .eq('programa_id', progId).eq('rol_programa', 'lider');
+    var lideres = parts.data || [];
+    if (lideres.length === 0) return { success: true, data: [] };
+
+    // Competencias
+    var comps = await _supabase.from('competencias').select('id, nombre').eq('programa_id', progId).order('orden');
+    if (!comps.data || comps.data.length === 0) return { success: true, data: [] };
+
+    // Encuestas POST del programa
+    var encs = await _supabase.from('encuestas').select('id').eq('programa_id', progId).eq('tipo', 'post');
+    var encIds = (encs.data || []).map(function(e) { return e.id; });
+    if (encIds.length === 0) return { success: true, data: [] };
+
+    // Preguntas
+    var pregs = await _supabase.from('preguntas').select('id, competencia_id, encuesta_id').in('encuesta_id', encIds);
+    var pregMap = {};
+    (pregs.data || []).forEach(function(p) { pregMap[p.id] = p; });
+
+    // Respuestas POST
+    var resps = await _supabase.from('respuestas').select('pregunta_id, valor, evaluado_id').in('pregunta_id', Object.keys(pregMap));
+
+    // Agrupar: evaluado_id -> competencia_id -> valores
+    var acum = {};
+    (resps.data || []).forEach(function(r) {
+      var p = pregMap[r.pregunta_id];
+      if (!p || !p.competencia_id) return;
+      var n = parseFloat(r.valor);
+      if (isNaN(n)) return;
+      if (!acum[r.evaluado_id]) acum[r.evaluado_id] = {};
+      if (!acum[r.evaluado_id][p.competencia_id]) acum[r.evaluado_id][p.competencia_id] = [];
+      acum[r.evaluado_id][p.competencia_id].push(n);
+    });
+
+    var data = lideres.map(function(l) {
+      var porComp = acum[l.usuario_id] || {};
+      var niveles = comps.data.map(function(c) {
+        var vals = porComp[c.id] || [];
+        var avg = 0;
+        if (vals.length > 0) {
+          avg = vals.reduce(function(a, b) { return a + b; }, 0) / vals.length;
+          avg = Math.round(avg * 10) / 10;
+        }
+        return { competencia: c.nombre, nivel: avg };
+      });
+      return {
+        nombre: l.usuarios ? l.usuarios.nombre : 'Usuario',
+        niveles: niveles
+      };
+    });
+    return { success: true, data: data };
   },
 
-  obtenerResumenPorEquipo: async function() {
-    return { success: true, data: [] };
+  obtenerResumenPorEquipo: async function(token, progId) {
+    if (!progId) return { success: true, data: [] };
+    // Agrupar lideres por "equipo" (usando cargo como proxy ya que no hay campo equipo)
+    var parts = await _supabase.from('participantes_programa')
+      .select('usuario_id, rol_programa, usuarios!participantes_programa_usuario_id_fkey(nombre, cargo)')
+      .eq('programa_id', progId);
+    var asociados = parts.data || [];
+
+    var grupos = {};
+    asociados.forEach(function(a) {
+      if (!a.usuarios) return;
+      var equipo = a.usuarios.cargo || 'Sin asignar';
+      if (!grupos[equipo]) grupos[equipo] = { equipo: equipo, area: '-', participantes: 0, lideres: 0, colaboradores: 0 };
+      grupos[equipo].participantes++;
+      if (a.rol_programa === 'lider') grupos[equipo].lideres++;
+      else grupos[equipo].colaboradores++;
+    });
+
+    var data = Object.values(grupos).map(function(g) {
+      return {
+        equipo: g.equipo,
+        area: g.area,
+        participantes: g.participantes,
+        nivelAplicacion: 0,
+        estado: g.participantes > 0 ? 'Activo' : 'Pendiente'
+      };
+    });
+    return { success: true, data: data };
   },
 
   obtenerMiProgreso: async function() {
