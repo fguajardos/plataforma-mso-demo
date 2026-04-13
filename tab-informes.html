@@ -501,38 +501,51 @@
     loadText.textContent = 'Recopilando datos del participante...';
     setTimeout(function() { progress.style.width = '40%'; loadText.textContent = 'Consultando IA...'; }, 800);
 
-    var prompt = buildIndividualPrompt(prog, part);
+    // Primero obtener datos reales del participante
+    google.script.run
+      .withSuccessHandler(function(rDatos) {
+        var datosReales = (rDatos && rDatos.success) ? rDatos.data : null;
+        var prompt = buildIndividualPrompt(prog, part, datosReales);
 
-    callGroqFromBrowser([{ role: 'user', content: prompt }])
-      .then(function(data) {
-        progress.style.width = '80%';
-        loadText.textContent = 'Generando informe individual...';
+        callGroqFromBrowser([{ role: 'user', content: prompt }])
+          .then(function(data) {
+            progress.style.width = '80%';
+            loadText.textContent = 'Generando informe individual...';
 
-        var iaData = {};
-        if (data.success && data.response) {
-          try {
-            var json = data.response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-            iaData = JSON.parse(json);
-          } catch (e) {
-            iaData = { resumen: data.response };
-          }
-        }
+            var iaData = {};
+            if (data.success && data.response) {
+              try {
+                var json = data.response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+                iaData = JSON.parse(json);
+              } catch (e) {
+                iaData = { resumen: data.response };
+              }
+            }
+            // Adjuntar datos reales para el render
+            iaData._datosReales = datosReales;
 
-        setTimeout(function() {
-          progress.style.width = '100%';
-          setTimeout(function() {
-            renderIndividual(prog, part, iaData);
+            setTimeout(function() {
+              progress.style.width = '100%';
+              setTimeout(function() {
+                renderIndividual(prog, part, iaData);
+                document.getElementById('informe-ia-loading').classList.add('hidden');
+                document.getElementById('informe-ia-preview').classList.remove('hidden');
+                progress.style.width = '0%';
+              }, 500);
+            }, 600);
+          })
+          .catch(function(err) {
             document.getElementById('informe-ia-loading').classList.add('hidden');
-            document.getElementById('informe-ia-preview').classList.remove('hidden');
             progress.style.width = '0%';
-          }, 500);
-        }, 600);
+            showToast('Error al generar informe: ' + (err.message || err), 'error');
+          });
       })
-      .catch(function(err) {
+      .withFailureHandler(function() {
         document.getElementById('informe-ia-loading').classList.add('hidden');
         progress.style.width = '0%';
-        showToast('Error al generar informe: ' + (err.message || err), 'error');
-      });
+        showToast('Error al obtener datos del participante', 'error');
+      })
+      .obtenerDatosInformeIndividual(App.token, panelProgramaId, participanteId);
   }
 
   /* ==========================================
@@ -559,38 +572,49 @@
     loadText.textContent = 'Recopilando datos del programa...';
     setTimeout(function() { progress.style.width = '40%'; loadText.textContent = 'Consultando IA...'; }, 800);
 
-    var prompt = buildConsolidadoPrompt(prog);
+    google.script.run
+      .withSuccessHandler(function(rDatos) {
+        var datosReales = (rDatos && rDatos.success) ? rDatos.data : null;
+        var prompt = buildConsolidadoPrompt(prog, datosReales);
 
-    callGroqFromBrowser([{ role: 'user', content: prompt }])
-      .then(function(data) {
-        progress.style.width = '80%';
-        loadText.textContent = 'Generando informe consolidado...';
+        callGroqFromBrowser([{ role: 'user', content: prompt }])
+          .then(function(data) {
+            progress.style.width = '80%';
+            loadText.textContent = 'Generando informe consolidado...';
 
-        var iaData = {};
-        if (data.success && data.response) {
-          try {
-            var json = data.response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-            iaData = JSON.parse(json);
-          } catch (e) {
-            iaData = { resumen: data.response };
-          }
-        }
+            var iaData = {};
+            if (data.success && data.response) {
+              try {
+                var json = data.response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+                iaData = JSON.parse(json);
+              } catch (e) {
+                iaData = { resumen: data.response };
+              }
+            }
+            iaData._datosReales = datosReales;
 
-        setTimeout(function() {
-          progress.style.width = '100%';
-          setTimeout(function() {
-            renderConsolidado(prog, iaData);
+            setTimeout(function() {
+              progress.style.width = '100%';
+              setTimeout(function() {
+                renderConsolidado(prog, iaData);
+                document.getElementById('informe-ia-loading').classList.add('hidden');
+                document.getElementById('informe-ia-preview').classList.remove('hidden');
+                progress.style.width = '0%';
+              }, 500);
+            }, 600);
+          })
+          .catch(function(err) {
             document.getElementById('informe-ia-loading').classList.add('hidden');
-            document.getElementById('informe-ia-preview').classList.remove('hidden');
             progress.style.width = '0%';
-          }, 500);
-        }, 600);
+            showToast('Error al generar informe: ' + (err.message || err), 'error');
+          });
       })
-      .catch(function(err) {
+      .withFailureHandler(function() {
         document.getElementById('informe-ia-loading').classList.add('hidden');
         progress.style.width = '0%';
-        showToast('Error al generar informe: ' + (err.message || err), 'error');
-      });
+        showToast('Error al obtener datos del programa', 'error');
+      })
+      .obtenerDatosInformeConsolidado(App.token, panelProgramaId);
   }
 
   /* ==========================================
@@ -622,26 +646,40 @@
      PROMPTS
      ========================================== */
 
-  function buildConsolidadoPrompt(prog) {
-    return 'Genera el contenido para un INFORME EJECUTIVO CONSOLIDADO del programa "' + prog.nombre + '". ' +
-      'Responde SOLO en JSON con esta estructura exacta: ' +
-      '{"intro":"<html breve describiendo el informe>","hallazgos":[{"titulo":"...","texto":"..."},{"titulo":"...","texto":"..."},{"titulo":"...","texto":"..."}],' +
-      '"lectura_global":"<html p\u00e1rrafo an\u00e1lisis global del grupo>",' +
-      '"conclusiones":["<conclusion 1>","<conclusion 2>","<conclusion 3>","<conclusion 4>"],' +
+  function buildConsolidadoPrompt(prog, datos) {
+    var dataJson = datos ? JSON.stringify(datos, null, 2) : '{}';
+    return 'Eres un consultor experto en desarrollo de liderazgo. Genera un INFORME EJECUTIVO CONSOLIDADO del programa "' + prog.nombre + '" basandote en los DATOS REALES siguientes.\n\n' +
+      'DATOS DEL PROGRAMA:\n' + dataJson + '\n\n' +
+      'Los valores van de 1 a 4 (1=no aplica, 2=aplica con guia, 3=aplica consistente, 4=es referente). ' +
+      'brecha_pre/post = autopercepcion - percepcion de colaboradores. Valores positivos indican sobrestimacion. ' +
+      'evolucion_auto/co = cambio del PRE al POST. ' +
+      'Responde SOLO con JSON (sin markdown ni backticks) con esta estructura exacta:\n' +
+      '{"intro":"<html breve describiendo el informe citando nombre del programa y numero de lideres>",' +
+      '"hallazgos":[{"titulo":"...","texto":"..."},{"titulo":"...","texto":"..."},{"titulo":"...","texto":"..."}],' +
+      '"lectura_global":"<html parrafo analisis global del grupo usando los promedios reales>",' +
+      '"conclusiones":["<conclusion 1 basada en datos>","<conclusion 2>","<conclusion 3>","<conclusion 4>"],' +
       '"recomendaciones":[{"titulo":"...","texto":"..."},{"titulo":"...","texto":"..."},{"titulo":"...","texto":"..."},{"titulo":"...","texto":"..."}],' +
-      '"cierre":"<html cierre ejecutivo>"}. ' +
-      'Usa <strong> para negritas. No uses markdown. SOLO el JSON.';
+      '"cierre":"<html cierre ejecutivo>"}.\n' +
+      'Usa <strong> para negritas. Cita numeros concretos de los datos (ej: "la brecha de 0.33 en Delegacion"). ' +
+      'Si no hay respuestas (totalRespuestas=0), el informe debe indicarlo y ofrecer recomendaciones generales.';
   }
 
-  function buildIndividualPrompt(prog, part) {
-    return 'Genera el contenido para un INFORME INDIVIDUAL del participante "' + (part ? (part.nombre_completo || part.nombre || 'Participante') : 'Participante') + '" en el programa "' + prog.nombre + '". ' +
-      'Responde SOLO en JSON con esta estructura exacta: ' +
-      '{"lectura_global":"<html lectura global del perfil del l\u00edder>",' +
-      '"analisis_competencias":[{"nombre":"...","brecha":"...","interpretacion":"...","evolucion":["...","..."]},{"nombre":"...","brecha":"...","interpretacion":"...","evolucion":["...","..."]},{"nombre":"...","brecha":"...","interpretacion":"...","evolucion":["...","..."]}],' +
+  function buildIndividualPrompt(prog, part, datos) {
+    var dataJson = datos ? JSON.stringify(datos, null, 2) : '{}';
+    var nombre = part ? (part.nombre_completo || part.nombre || 'Participante') : 'Participante';
+    return 'Eres un coach ejecutivo. Genera un INFORME INDIVIDUAL para "' + nombre + '" en el programa "' + prog.nombre + '" basandote en los DATOS REALES siguientes.\n\n' +
+      'DATOS DEL PARTICIPANTE:\n' + dataJson + '\n\n' +
+      'Los valores van de 1 a 4. auto_pre/post = autoevaluacion del lider. co_pre/post = evaluacion de sus colaboradores. ' +
+      'brecha = diferencia entre autopercepcion y percepcion de colaboradores (positivo = se sobrevalora). ' +
+      'evolucion = cambio del PRE al POST. ' +
+      'Responde SOLO con JSON (sin markdown ni backticks) con esta estructura exacta:\n' +
+      '{"lectura_global":"<html lectura global del perfil del lider citando datos concretos>",' +
+      '"analisis_competencias":[{"nombre":"<nombre competencia real>","brecha":"<descripcion cuantificada>","interpretacion":"...","evolucion":["<punto 1>","<punto 2>"]}],' +
       '"insight":"<frase clave del siguiente nivel de desarrollo>",' +
       '"recomendaciones":[{"titulo":"...","items":["...","..."]},{"titulo":"...","items":["...","..."]},{"titulo":"...","items":["...","..."]}],' +
-      '"compromiso":"<html compromiso de desarrollo>"}. ' +
-      'Usa <strong> para negritas. No uses markdown. SOLO el JSON.';
+      '"compromiso":"<html compromiso de desarrollo especifico>"}.\n' +
+      'Genera un objeto en analisis_competencias por CADA competencia real del participante. Usa <strong> para negritas. ' +
+      'Si no hay respuestas (totalRespuestas=0), indicalo y ofrece recomendaciones generales basadas en el nombre y foco de las competencias.';
   }
 
   /* ==========================================
@@ -652,13 +690,24 @@
     reporteCharts.forEach(function(c) { c.destroy(); }); reporteCharts = [];
     var hoy = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' });
 
-    /* Mock data */
-    var dims = [
-      { nombre: 'Delegaci\u00f3n', auto: 3.50, co: 3.17, brecha: 0.33 },
-      { nombre: 'Conversaciones', auto: 3.38, co: 3.17, brecha: 0.21 },
-      { nombre: 'Colaboraci\u00f3n', auto: 2.88, co: 3.00, brecha: -0.12 }
-    ];
-    var autoPromedio = 3.25, coPromedio = 3.11, brechaGeneral = 0.14;
+    // Datos reales desde Supabase (via obtenerDatosInformeConsolidado)
+    var datosReales = ia && ia._datosReales;
+    var dims, autoPromedio, coPromedio, brechaGeneral;
+    if (datosReales && datosReales.competencias && datosReales.competencias.length > 0) {
+      dims = datosReales.competencias.map(function(c) {
+        var auto = c.auto_post > 0 ? c.auto_post : c.auto_pre;
+        var co = c.co_post > 0 ? c.co_post : c.co_pre;
+        return { nombre: c.nombre, auto: auto, co: co, brecha: Math.round((auto - co) * 100) / 100 };
+      });
+      var totalAuto = dims.reduce(function(a, b) { return a + b.auto; }, 0);
+      var totalCo = dims.reduce(function(a, b) { return a + b.co; }, 0);
+      autoPromedio = dims.length > 0 ? Math.round((totalAuto / dims.length) * 100) / 100 : 0;
+      coPromedio = dims.length > 0 ? Math.round((totalCo / dims.length) * 100) / 100 : 0;
+      brechaGeneral = Math.round((autoPromedio - coPromedio) * 100) / 100;
+    } else {
+      dims = [];
+      autoPromedio = 0; coPromedio = 0; brechaGeneral = 0;
+    }
 
     var html = '<div class="rpt" id="pdf-page">';
 
@@ -795,13 +844,23 @@
     var hoy = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' });
     var nombre = part ? (part.nombre_completo || part.nombre || 'Participante') : 'Participante';
 
-    /* Mock data individual */
-    var dims = [
-      { nombre: 'Delegar', auto: 3, co: 4, brecha: -1 },
-      { nombre: 'Conversaciones', auto: 4, co: 3, brecha: 1 },
-      { nombre: 'Colaboraci\u00f3n', auto: 3, co: 3, brecha: 0 }
-    ];
-    var autoP = 3.33, coP = 3.33, brechaG = 0;
+    // Datos reales desde Supabase
+    var datosReales = ia && ia._datosReales;
+    var dims, autoP, coP, brechaG;
+    if (datosReales && datosReales.competencias && datosReales.competencias.length > 0) {
+      dims = datosReales.competencias.map(function(c) {
+        var auto = c.auto_post > 0 ? c.auto_post : c.auto_pre;
+        var co = c.co_post > 0 ? c.co_post : c.co_pre;
+        return { nombre: c.nombre, auto: auto, co: co, brecha: Math.round((auto - co) * 100) / 100 };
+      });
+      var tA = dims.reduce(function(a, b) { return a + b.auto; }, 0);
+      var tC = dims.reduce(function(a, b) { return a + b.co; }, 0);
+      autoP = dims.length > 0 ? Math.round((tA / dims.length) * 100) / 100 : 0;
+      coP = dims.length > 0 ? Math.round((tC / dims.length) * 100) / 100 : 0;
+      brechaG = Math.round((autoP - coP) * 100) / 100;
+    } else {
+      dims = []; autoP = 0; coP = 0; brechaG = 0;
+    }
 
     var html = '<div class="rpt" id="pdf-page">';
 

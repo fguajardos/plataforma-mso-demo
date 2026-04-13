@@ -1104,6 +1104,197 @@ var backendFunctions = {
     return { success: true, data: data };
   },
 
+  obtenerDatosInformeConsolidado: async function(token, progId) {
+    if (!progId) return { success: false, error: 'Programa no identificado' };
+
+    var prog = await _supabase.from('programas').select('*, clientes(nombre)').eq('id', progId).single();
+    if (prog.error) return { success: false, error: 'Programa no encontrado' };
+
+    var comps = await _supabase.from('competencias').select('id, nombre, descripcion, foco_desarrollo').eq('programa_id', progId).order('orden');
+    var competencias = comps.data || [];
+
+    var parts = await _supabase.from('participantes_programa')
+      .select('usuario_id, rol_programa, usuarios!participantes_programa_usuario_id_fkey(nombre, cargo)')
+      .eq('programa_id', progId);
+    var participantes = (parts.data || []).filter(function(p) { return p.usuarios; });
+    var totalLideres = participantes.filter(function(p) { return p.rol_programa === 'lider'; }).length;
+    var totalColaboradores = participantes.filter(function(p) { return p.rol_programa === 'colaborador'; }).length;
+
+    // Encuestas y preguntas
+    var encs = await _supabase.from('encuestas').select('id, tipo, tipo_cuestionario').eq('programa_id', progId);
+    var encMap = {};
+    (encs.data || []).forEach(function(e) { encMap[e.id] = e; });
+    var encIds = Object.keys(encMap);
+
+    var pregsData = encIds.length > 0
+      ? await _supabase.from('preguntas').select('id, competencia_id, encuesta_id').in('encuesta_id', encIds)
+      : { data: [] };
+    var pregMap = {};
+    (pregsData.data || []).forEach(function(p) { pregMap[p.id] = p; });
+    var pregIds = Object.keys(pregMap);
+
+    var respsData = pregIds.length > 0
+      ? await _supabase.from('respuestas').select('pregunta_id, valor, evaluador_id, evaluado_id').in('pregunta_id', pregIds)
+      : { data: [] };
+    var respuestas = respsData.data || [];
+
+    // Agregar por competencia: auto (lider-self) y co (colab-to-lider), separando pre/post
+    var agregado = {};
+    competencias.forEach(function(c) {
+      agregado[c.id] = {
+        nombre: c.nombre,
+        descripcion: c.descripcion || '',
+        foco_desarrollo: c.foco_desarrollo || '',
+        auto_pre: [], auto_post: [],
+        co_pre: [], co_post: []
+      };
+    });
+    respuestas.forEach(function(r) {
+      var p = pregMap[r.pregunta_id];
+      if (!p || !p.competencia_id || !agregado[p.competencia_id]) return;
+      var enc = encMap[p.encuesta_id];
+      if (!enc) return;
+      var v = parseFloat(r.valor);
+      if (isNaN(v)) return;
+      var tipoCuest = enc.tipo_cuestionario || 'autoevaluacion';
+      var momento = enc.tipo || 'pre';
+      var key = (tipoCuest === 'coevaluacion' ? 'co_' : 'auto_') + momento;
+      agregado[p.competencia_id][key].push(v);
+    });
+
+    function avg(arr) {
+      if (!arr || arr.length === 0) return 0;
+      return Math.round((arr.reduce(function(a, b) { return a + b; }, 0) / arr.length) * 100) / 100;
+    }
+
+    var analisisCompetencias = competencias.map(function(c) {
+      var ag = agregado[c.id];
+      var autoPre = avg(ag.auto_pre), autoPost = avg(ag.auto_post);
+      var coPre = avg(ag.co_pre), coPost = avg(ag.co_post);
+      return {
+        nombre: c.nombre,
+        foco_desarrollo: c.foco_desarrollo,
+        auto_pre: autoPre, auto_post: autoPost,
+        co_pre: coPre, co_post: coPost,
+        brecha_pre: Math.round((autoPre - coPre) * 100) / 100,
+        brecha_post: Math.round((autoPost - coPost) * 100) / 100,
+        evolucion_auto: Math.round((autoPost - autoPre) * 100) / 100,
+        evolucion_co: Math.round((coPost - coPre) * 100) / 100
+      };
+    });
+
+    return {
+      success: true,
+      data: {
+        programa: {
+          id: prog.data.id,
+          nombre: prog.data.nombre,
+          cliente_nombre: prog.data.clientes ? prog.data.clientes.nombre : '',
+          fecha_inicio: prog.data.fecha_inicio,
+          fecha_termino: prog.data.fecha_termino,
+          objetivo: prog.data.objetivo || ''
+        },
+        totalLideres: totalLideres,
+        totalColaboradores: totalColaboradores,
+        totalRespuestas: respuestas.length,
+        competencias: analisisCompetencias
+      }
+    };
+  },
+
+  obtenerDatosInformeIndividual: async function(token, progId, userId) {
+    if (!progId || !userId) return { success: false, error: 'Parametros faltantes' };
+
+    var prog = await _supabase.from('programas').select('*, clientes(nombre)').eq('id', progId).single();
+    if (prog.error) return { success: false, error: 'Programa no encontrado' };
+
+    var usr = await _supabase.from('usuarios').select('id, nombre, email, cargo').eq('id', userId).single();
+    if (usr.error) return { success: false, error: 'Usuario no encontrado' };
+
+    var comps = await _supabase.from('competencias').select('id, nombre, foco_desarrollo').eq('programa_id', progId).order('orden');
+    var competencias = comps.data || [];
+
+    var encs = await _supabase.from('encuestas').select('id, tipo, tipo_cuestionario').eq('programa_id', progId);
+    var encMap = {};
+    (encs.data || []).forEach(function(e) { encMap[e.id] = e; });
+    var encIds = Object.keys(encMap);
+
+    var pregsData = encIds.length > 0
+      ? await _supabase.from('preguntas').select('id, competencia_id, encuesta_id').in('encuesta_id', encIds)
+      : { data: [] };
+    var pregMap = {};
+    (pregsData.data || []).forEach(function(p) { pregMap[p.id] = p; });
+    var pregIds = Object.keys(pregMap);
+
+    // Respuestas DONDE el usuario es el evaluado (tanto auto como co)
+    var respsData = pregIds.length > 0
+      ? await _supabase.from('respuestas').select('pregunta_id, valor, evaluador_id, evaluado_id')
+          .in('pregunta_id', pregIds).eq('evaluado_id', userId)
+      : { data: [] };
+    var respuestas = respsData.data || [];
+
+    var agregado = {};
+    competencias.forEach(function(c) {
+      agregado[c.id] = {
+        nombre: c.nombre,
+        foco_desarrollo: c.foco_desarrollo || '',
+        auto_pre: [], auto_post: [],
+        co_pre: [], co_post: []
+      };
+    });
+    respuestas.forEach(function(r) {
+      var p = pregMap[r.pregunta_id];
+      if (!p || !p.competencia_id || !agregado[p.competencia_id]) return;
+      var enc = encMap[p.encuesta_id];
+      if (!enc) return;
+      var v = parseFloat(r.valor);
+      if (isNaN(v)) return;
+      var esAuto = (r.evaluador_id === r.evaluado_id);
+      var momento = enc.tipo || 'pre';
+      var key = (esAuto ? 'auto_' : 'co_') + momento;
+      agregado[p.competencia_id][key].push(v);
+    });
+
+    function avg(arr) {
+      if (!arr || arr.length === 0) return 0;
+      return Math.round((arr.reduce(function(a, b) { return a + b; }, 0) / arr.length) * 100) / 100;
+    }
+
+    var analisisCompetencias = competencias.map(function(c) {
+      var ag = agregado[c.id];
+      var autoPre = avg(ag.auto_pre), autoPost = avg(ag.auto_post);
+      var coPre = avg(ag.co_pre), coPost = avg(ag.co_post);
+      return {
+        nombre: c.nombre,
+        foco_desarrollo: c.foco_desarrollo,
+        auto_pre: autoPre, auto_post: autoPost,
+        co_pre: coPre, co_post: coPost,
+        brecha_pre: Math.round((autoPre - coPre) * 100) / 100,
+        brecha_post: Math.round((autoPost - coPost) * 100) / 100,
+        evolucion_auto: Math.round((autoPost - autoPre) * 100) / 100,
+        evolucion_co: Math.round((coPost - coPre) * 100) / 100
+      };
+    });
+
+    return {
+      success: true,
+      data: {
+        programa: {
+          nombre: prog.data.nombre,
+          cliente_nombre: prog.data.clientes ? prog.data.clientes.nombre : ''
+        },
+        participante: {
+          id: usr.data.id,
+          nombre: usr.data.nombre,
+          email: usr.data.email,
+          cargo: usr.data.cargo || ''
+        },
+        totalRespuestas: respuestas.length,
+        competencias: analisisCompetencias
+      }
+    };
+  },
+
   obtenerResumenPorEquipo: async function(token, progId) {
     if (!progId) return { success: true, data: [] };
     // Agrupar lideres por "equipo" (usando cargo como proxy ya que no hay campo equipo)
