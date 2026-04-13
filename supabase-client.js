@@ -1538,7 +1538,58 @@ var backendFunctions = {
   generarInformeConsolidado: async function() { return { success: true, data: { url: '#', mensaje: 'Informe generado' } }; },
   generarInformeIndividual: async function() { return { success: true, data: { url: '#', mensaje: 'Informe generado' } }; },
   exportarDatosExcel: async function() { return { success: true, data: { url: '#' } }; },
-  listarInformesGenerados: async function() { return { success: true, data: [] }; },
+  listarInformesGenerados: async function(token, progId) {
+    if (!progId) return { success: true, data: [] };
+    var r = await _supabase.from('informes_generados')
+      .select('*, usuarios!informes_generados_generado_por_fkey(nombre), participante:usuarios!informes_generados_participante_id_fkey(nombre)')
+      .eq('programa_id', progId).order('created_at', { ascending: false });
+    if (r.error) {
+      // Si la tabla no existe todavia, degradar con gracia
+      if (String(r.error.message || '').indexOf('informes_generados') !== -1) {
+        console.warn('[listarInformesGenerados] tabla informes_generados no existe aun');
+        return { success: true, data: [] };
+      }
+      return { success: false, error: r.error.message };
+    }
+    var data = (r.data || []).map(function(i) {
+      var tipoLabel = (i.tipo === 'consolidado' ? 'Consolidado' : 'Individual') + ' ' + (i.momento || 'post').toUpperCase();
+      var nombre = tipoLabel;
+      if (i.participante) nombre += ' - ' + i.participante.nombre;
+      return {
+        id: i.id,
+        nombre: nombre,
+        tipo: i.tipo,
+        momento: i.momento,
+        participante_id: i.participante_id,
+        participante_nombre: i.participante ? i.participante.nombre : null,
+        generado_por: i.usuarios ? i.usuarios.nombre : '',
+        fecha: i.created_at,
+        url: null
+      };
+    });
+    return { success: true, data: data };
+  },
+
+  registrarInformeGenerado: async function(token, progId, tipo, momento, participanteId) {
+    var userId = null;
+    try {
+      var u = JSON.parse(sessionStorage.getItem('tpt_usuario') || 'null');
+      if (u && u.id) userId = u.id;
+    } catch (e) {}
+    var payload = {
+      programa_id: progId,
+      tipo: tipo,
+      momento: momento || 'post',
+      participante_id: participanteId || null,
+      generado_por: userId
+    };
+    var r = await _supabase.from('informes_generados').insert(payload).select().single();
+    if (r.error) {
+      console.warn('[registrarInformeGenerado]', r.error);
+      return { success: false, error: r.error.message };
+    }
+    return { success: true, data: { id: r.data.id } };
+  },
   listarCronograma: async function() { return { success: true, data: { hitos: [], fases: {} } }; },
   obtenerResultadosEncuesta: async function() { return { success: true, data: { respuestas: [], estadisticas: {} } }; },
   resetearPassword: async function() { return { success: true }; },

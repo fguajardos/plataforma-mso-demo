@@ -394,6 +394,12 @@
         informesDisponibilidad = disp;
         renderDisponibilidadGrid(disp);
         aplicarGatingCards(disp);
+        // Traer cobertura real para mostrar badge informativo
+        google.script.run
+          .withSuccessHandler(function(r2) {
+            if (r2 && r2.success && r2.data) agregarBadgeCobertura(r2.data);
+          })
+          .obtenerDatosInformeConsolidado(App.token, panelProgramaId, 'post');
       })
       .listarEncuestas(App.token, panelProgramaId);
   }
@@ -418,11 +424,26 @@
   }
 
   function aplicarGatingCards(disp) {
-    // PRE listo si al menos una encuesta PRE existe (cerrada o activa con respuestas)
-    var preDisponible = !!(disp.pre_auto || disp.pre_co);
-    var postDisponible = !!(disp.post_auto || disp.post_co);
+    // Encuesta existe + al menos esta activa (no borrador) => se puede intentar generar
+    // Cerrada es el estado ideal pero permitimos activa para generar preview
+    function encListo(enc) {
+      if (!enc) return false;
+      var e = enc.estado || 'borrador';
+      return e === 'activa' || e === 'cerrada';
+    }
+    function mensaje(enc, nombre) {
+      if (!enc) return 'La encuesta ' + nombre + ' aun no ha sido creada';
+      if (enc.estado === 'borrador') return 'La encuesta ' + nombre + ' esta en borrador. Actualiza su estado para generar el informe.';
+      return '';
+    }
+    var preAutoOk = encListo(disp.pre_auto);
+    var preCoOk = encListo(disp.pre_co);
+    var postAutoOk = encListo(disp.post_auto);
+    var postCoOk = encListo(disp.post_co);
+    var preOk = preAutoOk || preCoOk;
+    var postOk = postAutoOk || postCoOk;
 
-    function setCardGate(id, disponible, mensaje) {
+    function setCardGate(id, disponible, msg) {
       var card = document.getElementById(id);
       if (!card) return;
       if (disponible) {
@@ -432,13 +453,34 @@
       } else {
         card.style.opacity = '0.5';
         card.style.cursor = 'not-allowed';
-        card.setAttribute('data-gated', mensaje);
+        card.setAttribute('data-gated', msg);
       }
     }
-    setCardGate('card-individual-pre', preDisponible, 'Necesitas crear encuestas PRE primero');
-    setCardGate('card-consolidado-pre', preDisponible, 'Necesitas crear encuestas PRE primero');
-    setCardGate('card-individual-post', postDisponible, 'Necesitas crear encuestas POST primero');
-    setCardGate('card-consolidado-post', postDisponible, 'Necesitas crear encuestas POST primero');
+    var msgPre = preOk ? '' : 'Necesitas crear y activar al menos una encuesta PRE';
+    var msgPost = postOk ? '' : 'Necesitas crear y activar al menos una encuesta POST';
+    setCardGate('card-individual-pre', preOk, msgPre);
+    setCardGate('card-consolidado-pre', preOk, msgPre);
+    setCardGate('card-individual-post', postOk, msgPost);
+    setCardGate('card-consolidado-post', postOk, msgPost);
+  }
+
+  function agregarBadgeCobertura(datos) {
+    // Actualiza un badge en la card de disponibilidad mostrando cobertura real
+    if (!datos) return;
+    var txt = datos.totalLideres + ' l\u00edderes \u00b7 ' + datos.lideresConAuto + ' con auto \u00b7 ' + datos.colabConCo + ' con coeval';
+    var badgeEl = document.getElementById('informes-badge-cobertura');
+    if (!badgeEl) {
+      var host = document.getElementById('informes-disponibilidad');
+      if (host) {
+        var span = document.createElement('div');
+        span.id = 'informes-badge-cobertura';
+        span.style.cssText = 'margin-top:12px;padding:8px 12px;background:#eff6ff;border-radius:6px;font-size:12px;color:#1e3a8a;';
+        span.innerHTML = '<strong>Cobertura actual:</strong> ' + txt;
+        host.querySelector('.card-body').appendChild(span);
+      }
+    } else {
+      badgeEl.innerHTML = '<strong>Cobertura actual:</strong> ' + txt;
+    }
   }
 
   function verificarGate(cardId) {
@@ -661,6 +703,9 @@
                 document.getElementById('informe-ia-loading').classList.add('hidden');
                 document.getElementById('informe-ia-preview').classList.remove('hidden');
                 progress.style.width = '0%';
+                // Registrar historial
+                google.script.run.registrarInformeGenerado(App.token, panelProgramaId, 'individual', informeIAMomento, participanteId);
+                setTimeout(cargarInformesGenerados, 800);
               }, 500);
             }, 600);
           })
@@ -733,6 +778,8 @@
                 document.getElementById('informe-ia-loading').classList.add('hidden');
                 document.getElementById('informe-ia-preview').classList.remove('hidden');
                 progress.style.width = '0%';
+                google.script.run.registrarInformeGenerado(App.token, panelProgramaId, 'consolidado', informeIAMomento, null);
+                setTimeout(cargarInformesGenerados, 800);
               }, 500);
             }, 600);
           })
@@ -755,24 +802,78 @@
      ========================================== */
 
   function exportarDatosExcel() {
+    if (typeof XLSX === 'undefined') {
+      showToast('Libreria XLSX no disponible', 'error');
+      return;
+    }
     showToast('Preparando exportaci\u00f3n de datos...', 'info');
 
+    // Obtener datos POST del consolidado para tener la matriz completa
     google.script.run
-      .withSuccessHandler(function(r) {
-        if (r && r.success) {
-          showToast('Exportaci\u00f3n lista.', 'success');
-          if (r.url) {
-            window.open(r.url, '_blank');
-          }
-          cargarInformesGenerados();
-        } else {
-          showToast(r ? r.error : 'Error al exportar datos.', 'error');
+      .withSuccessHandler(function(rPost) {
+        var datos = (rPost && rPost.success) ? rPost.data : null;
+        if (!datos) { showToast('No se pudieron obtener los datos.', 'error'); return; }
+
+        var wb = XLSX.utils.book_new();
+        var nombrePrograma = datos.programa.nombre || 'Programa';
+        var hoy = new Date().toISOString().slice(0, 10);
+
+        // Hoja 1: Resumen del programa
+        var resumen = [
+          ['Programa', datos.programa.nombre || ''],
+          ['Cliente', datos.programa.cliente_nombre || ''],
+          ['Fecha inicio', datos.programa.fecha_inicio || ''],
+          ['Fecha termino', datos.programa.fecha_termino || ''],
+          ['Objetivo', datos.programa.objetivo || ''],
+          [],
+          ['Total Lideres', datos.totalLideres],
+          ['Total Colaboradores', datos.totalColaboradores],
+          ['Total Respuestas', datos.totalRespuestas],
+          ['Lideres con Autoevaluacion', datos.lideresConAuto],
+          ['Colaboradores con Coevaluacion', datos.colabConCo],
+          [],
+          ['Fecha exportacion', hoy]
+        ];
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumen), 'Resumen');
+
+        // Hoja 2: Competencias con promedios PRE y POST
+        var comps = [['Competencia', 'Foco Desarrollo', 'Auto PRE', 'Coeval PRE', 'Brecha PRE', 'Auto POST', 'Coeval POST', 'Brecha POST', 'Evolucion Auto', 'Evolucion Coeval', 'Cierre Brecha']];
+        (datos.competencias || []).forEach(function(c) {
+          comps.push([
+            c.nombre || '',
+            c.foco_desarrollo || '',
+            c.auto_pre, c.co_pre, c.brecha_pre,
+            c.auto_post, c.co_post, c.brecha_post,
+            c.evolucion_auto, c.evolucion_co, c.cierre_brecha
+          ]);
+        });
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(comps), 'Competencias');
+
+        // Hoja 3: Participantes (desde panelData si existe)
+        if (typeof panelData !== 'undefined' && panelData.participantes) {
+          var parts = [['Nombre', 'Email', 'Cargo', 'Rol Programa']];
+          panelData.participantes.forEach(function(p) {
+            parts.push([
+              p.nombre || '',
+              p.email || '',
+              p.cargo || '',
+              p.rol_programa || ''
+            ]);
+          });
+          XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(parts), 'Participantes');
         }
+
+        var filename = 'Datos_' + nombrePrograma.replace(/[^a-zA-Z0-9]/g, '_') + '_' + hoy + '.xlsx';
+        XLSX.writeFile(wb, filename);
+        showToast('Excel descargado: ' + filename, 'success');
+        // Registrar en historial
+        google.script.run.registrarInformeGenerado(App.token, panelProgramaId, 'exportacion', 'post', null);
+        setTimeout(cargarInformesGenerados, 800);
       })
       .withFailureHandler(function(err) {
-        showToast('Error de conexi\u00f3n: ' + err.message, 'error');
+        showToast('Error de conexi\u00f3n: ' + (err && err.message || ''), 'error');
       })
-      .exportarDatosExcel(App.token, panelProgramaId);
+      .obtenerDatosInformeConsolidado(App.token, panelProgramaId, 'post');
   }
 
   /* ==========================================
