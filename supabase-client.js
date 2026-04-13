@@ -519,12 +519,12 @@ var backendFunctions = {
   },
 
   obtenerEncuestaPendiente: async function(token) {
-    // Buscar encuestas activas de los programas del usuario
-    var session = await _supabase.auth.getSession();
-    if (!session.data.session) return { success: true, data: [] };
+    // Obtener usuario actual desde sessionStorage (login directo, no Supabase Auth)
     var userId = null;
-    var usr = await _supabase.from('usuarios').select('id').eq('auth_id', session.data.session.user.id).single();
-    if (usr.data) userId = usr.data.id;
+    try {
+      var u = JSON.parse(sessionStorage.getItem('tpt_usuario') || 'null');
+      if (u && u.id) userId = u.id;
+    } catch (e) {}
     if (!userId) return { success: true, data: [] };
 
     var pp = await _supabase.from('participantes_programa').select('programa_id').eq('usuario_id', userId);
@@ -710,22 +710,26 @@ var backendFunctions = {
   // NOTIFICACIONES
   // ============================================
   contarNotificacionesPendientes: async function() {
-    var session = await _supabase.auth.getSession();
-    if (!session.data.session) return { success: true, data: { count: 0 } };
-    var usr = await _supabase.from('usuarios').select('id').eq('auth_id', session.data.session.user.id).single();
-    if (!usr.data) return { success: true, data: { count: 0 } };
+    var userId = null;
+    try {
+      var u = JSON.parse(sessionStorage.getItem('tpt_usuario') || 'null');
+      if (u && u.id) userId = u.id;
+    } catch (e) {}
+    if (!userId) return { success: true, data: { count: 0 } };
     var r = await _supabase.from('notificaciones').select('id', { count: 'exact' })
-      .eq('usuario_id', usr.data.id).eq('leida', false);
+      .eq('usuario_id', userId).eq('leida', false);
     return { success: true, data: { count: r.count || 0 } };
   },
 
   listarNotificaciones: async function() {
-    var session = await _supabase.auth.getSession();
-    if (!session.data.session) return { success: true, data: [] };
-    var usr = await _supabase.from('usuarios').select('id').eq('auth_id', session.data.session.user.id).single();
-    if (!usr.data) return { success: true, data: [] };
+    var userId = null;
+    try {
+      var u = JSON.parse(sessionStorage.getItem('tpt_usuario') || 'null');
+      if (u && u.id) userId = u.id;
+    } catch (e) {}
+    if (!userId) return { success: true, data: [] };
     var r = await _supabase.from('notificaciones').select('*')
-      .eq('usuario_id', usr.data.id).order('created_at', { ascending: false });
+      .eq('usuario_id', userId).order('created_at', { ascending: false });
     return { success: true, data: r.data || [] };
   },
 
