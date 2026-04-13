@@ -73,9 +73,11 @@
     google.script.run
       .withSuccessHandler(function(r) {
         if (r.success) {
-          encuestasPendientes = r.data || [];
+          var todas = r.data || [];
+          encuestasPendientes = todas.filter(function(e) { return e.estado !== 'completada'; });
+          var encuestasCompletadas = todas.filter(function(e) { return e.estado === 'completada'; });
           renderPendientes(encuestasPendientes);
-          renderCompletadas();
+          renderCompletadas(encuestasCompletadas);
         } else {
           document.getElementById('encuestas-pendientes').innerHTML =
             '<div class="empty-state"><p>' + escapeHtml(r.error) + '</p></div>';
@@ -88,57 +90,45 @@
       .obtenerEncuestaPendiente(App.token);
   }
 
+  function cardEncuesta(e, completada) {
+    var tipoBadge = e.tipo === 'pre'
+      ? '<span class="badge badge-info">PRE</span>'
+      : '<span class="badge badge-success">POST</span>';
+    var fechaLimite = e.fecha_cierre ? '<span class="text-xs text-muted">Fecha limite: ' + formatDate(e.fecha_cierre) + '</span>' : '';
+    var liderInfo = e.lider_nombre
+      ? '<br><span class="text-sm" style="color:var(--color-primario);font-weight:500;">Evaluando a: ' + escapeHtml(e.lider_nombre) + '</span>'
+      : '';
+    var accion = completada
+      ? '<span class="badge badge-success" style="padding:8px 16px;">Completada</span>'
+      : '<button class="btn btn-primary" onclick="abrirEncuesta(\'' + e.id + '\')">Responder</button>';
+
+    return '<div class="card mb-3"><div class="card-body flex-between">' +
+      '<div>' +
+        '<strong>' + escapeHtml(e.nombre) + '</strong> ' + tipoBadge + '<br>' +
+        '<span class="text-sm text-muted">Programa: ' + escapeHtml(e.programa_nombre) + '</span>' +
+        liderInfo + '<br>' +
+        fechaLimite +
+      '</div>' +
+      accion +
+    '</div></div>';
+  }
+
   function renderPendientes(encuestas) {
     var div = document.getElementById('encuestas-pendientes');
     if (!encuestas || encuestas.length === 0) {
       div.innerHTML = '<div class="empty-state"><p>No tienes encuestas pendientes. Buen trabajo.</p></div>';
       return;
     }
-
-    div.innerHTML = encuestas.map(function(e) {
-      var tipoBadge = e.tipo === 'pre'
-        ? '<span class="badge badge-info">PRE</span>'
-        : '<span class="badge badge-success">POST</span>';
-      var fechaLimite = e.fecha_cierre ? '<span class="text-xs text-muted">Fecha limite: ' + formatDate(e.fecha_cierre) + '</span>' : '';
-
-      var liderInfo = e.lider_nombre
-        ? '<br><span class="text-sm" style="color:var(--color-primario);font-weight:500;">Evaluando a: ' + escapeHtml(e.lider_nombre) + '</span>'
-        : '';
-
-      return '<div class="card mb-3"><div class="card-body flex-between">' +
-        '<div>' +
-          '<strong>' + escapeHtml(e.nombre) + '</strong> ' + tipoBadge + '<br>' +
-          '<span class="text-sm text-muted">Programa: ' + escapeHtml(e.programa_nombre) + '</span>' +
-          liderInfo + '<br>' +
-          fechaLimite +
-        '</div>' +
-        '<button class="btn btn-primary" onclick="abrirEncuesta(\'' + e.id + '\')">Responder</button>' +
-      '</div></div>';
-    }).join('');
+    div.innerHTML = encuestas.map(function(e) { return cardEncuesta(e, false); }).join('');
   }
 
-  function renderCompletadas() {
-    // Las encuestas completadas se obtienen comparando: las que estan en el programa pero no en pendientes
-    // Simplemente mostramos un mensaje si ya no hay pendientes
+  function renderCompletadas(encuestas) {
     var div = document.getElementById('encuestas-completadas');
-    div.innerHTML = '<div class="empty-state"><p>Las encuestas que hayas completado apareceran aqui una vez cargadas.</p></div>';
-
-    // Intentamos cargar el progreso para mostrar encuestas ya respondidas
-    google.script.run
-      .withSuccessHandler(function(r) {
-        if (r.success && r.data && r.data.comparacion && r.data.comparacion.length > 0) {
-          div.innerHTML = '<div class="card"><div class="card-body">' +
-            '<p class="text-sm text-muted">Has respondido encuestas en tus programas asignados. ' +
-            'Revisa tu progreso en la seccion "Mi Progreso".</p>' +
-          '</div></div>';
-        } else {
-          div.innerHTML = '<div class="empty-state"><p>Aun no has completado ninguna encuesta.</p></div>';
-        }
-      })
-      .withFailureHandler(function() {
-        div.innerHTML = '';
-      })
-      .obtenerMiProgreso(App.token);
+    if (!encuestas || encuestas.length === 0) {
+      div.innerHTML = '<div class="empty-state"><p>Aun no has completado ninguna encuesta.</p></div>';
+      return;
+    }
+    div.innerHTML = encuestas.map(function(e) { return cardEncuesta(e, true); }).join('');
   }
 
   function abrirEncuesta(encuestaId) {

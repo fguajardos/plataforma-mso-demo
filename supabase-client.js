@@ -526,36 +526,41 @@ var backendFunctions = {
     } catch (e) {}
     if (!userId) return { success: true, data: [] };
 
-    // Obtener programas del usuario con su rol_programa
     var pp = await _supabase.from('participantes_programa')
       .select('programa_id, rol_programa').eq('usuario_id', userId);
     var rows = pp.data || [];
     if (rows.length === 0) return { success: true, data: [] };
 
-    // Mapa programa_id -> rol_programa del usuario
     var rolPorPrograma = {};
     rows.forEach(function(r) { rolPorPrograma[r.programa_id] = r.rol_programa; });
     var progIds = Object.keys(rolPorPrograma);
 
     var encs = await _supabase.from('encuestas').select('*, programas(nombre)')
       .in('programa_id', progIds).eq('estado', 'activa');
-
-    // Filtrar segun rol:
-    //   lider -> solo autoevaluacion (evalua a si mismo)
-    //   colaborador -> solo coevaluacion (evalua a su lider)
-    var data = (encs.data || []).filter(function(e) {
+    var candidates = (encs.data || []).filter(function(e) {
       var rol = rolPorPrograma[e.programa_id];
       var tipoCuest = e.tipo_cuestionario || 'autoevaluacion';
       if (rol === 'lider') return tipoCuest === 'autoevaluacion';
       if (rol === 'colaborador') return tipoCuest === 'coevaluacion';
       return false;
-    }).map(function(e) {
+    });
+    if (candidates.length === 0) return { success: true, data: [] };
+
+    // Identificar que encuestas ya fueron respondidas por este usuario
+    var encIds = candidates.map(function(e) { return e.id; });
+    var resp = await _supabase.from('respuestas')
+      .select('encuesta_id').eq('evaluador_id', userId).in('encuesta_id', encIds);
+    var respondidas = {};
+    (resp.data || []).forEach(function(r) { respondidas[r.encuesta_id] = true; });
+
+    var data = candidates.map(function(e) {
       return {
-        id: e.id, nombre: e.nombre,
+        id: e.id,
+        nombre: e.nombre,
         programa_nombre: e.programas ? e.programas.nombre : '',
         tipo: e.tipo,
         tipo_cuestionario: e.tipo_cuestionario,
-        estado: 'pendiente',
+        estado: respondidas[e.id] ? 'completada' : 'pendiente',
         fecha_cierre: e.fecha_cierre || ''
       };
     });
