@@ -519,7 +519,6 @@ var backendFunctions = {
   },
 
   obtenerEncuestaPendiente: async function(token) {
-    // Obtener usuario actual desde sessionStorage (login directo, no Supabase Auth)
     var userId = null;
     try {
       var u = JSON.parse(sessionStorage.getItem('tpt_usuario') || 'null');
@@ -527,16 +526,37 @@ var backendFunctions = {
     } catch (e) {}
     if (!userId) return { success: true, data: [] };
 
-    var pp = await _supabase.from('participantes_programa').select('programa_id').eq('usuario_id', userId);
-    var progIds = (pp.data || []).map(function(p) { return p.programa_id; });
-    if (progIds.length === 0) return { success: true, data: [] };
+    // Obtener programas del usuario con su rol_programa
+    var pp = await _supabase.from('participantes_programa')
+      .select('programa_id, rol_programa').eq('usuario_id', userId);
+    var rows = pp.data || [];
+    if (rows.length === 0) return { success: true, data: [] };
 
-    var encs = await _supabase.from('encuestas').select('*, programas(nombre)').in('programa_id', progIds).eq('estado', 'activa');
-    var data = (encs.data || []).map(function(e) {
+    // Mapa programa_id -> rol_programa del usuario
+    var rolPorPrograma = {};
+    rows.forEach(function(r) { rolPorPrograma[r.programa_id] = r.rol_programa; });
+    var progIds = Object.keys(rolPorPrograma);
+
+    var encs = await _supabase.from('encuestas').select('*, programas(nombre)')
+      .in('programa_id', progIds).eq('estado', 'activa');
+
+    // Filtrar segun rol:
+    //   lider -> solo autoevaluacion (evalua a si mismo)
+    //   colaborador -> solo coevaluacion (evalua a su lider)
+    var data = (encs.data || []).filter(function(e) {
+      var rol = rolPorPrograma[e.programa_id];
+      var tipoCuest = e.tipo_cuestionario || 'autoevaluacion';
+      if (rol === 'lider') return tipoCuest === 'autoevaluacion';
+      if (rol === 'colaborador') return tipoCuest === 'coevaluacion';
+      return false;
+    }).map(function(e) {
       return {
         id: e.id, nombre: e.nombre,
         programa_nombre: e.programas ? e.programas.nombre : '',
-        tipo: e.tipo, estado: 'pendiente', fecha_cierre: e.fecha_cierre || ''
+        tipo: e.tipo,
+        tipo_cuestionario: e.tipo_cuestionario,
+        estado: 'pendiente',
+        fecha_cierre: e.fecha_cierre || ''
       };
     });
     return { success: true, data: data };
