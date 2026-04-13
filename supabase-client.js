@@ -1104,8 +1104,9 @@ var backendFunctions = {
     return { success: true, data: data };
   },
 
-  obtenerDatosInformeConsolidado: async function(token, progId) {
+  obtenerDatosInformeConsolidado: async function(token, progId, momento) {
     if (!progId) return { success: false, error: 'Programa no identificado' };
+    momento = momento || 'post'; // default post (informe completo)
 
     var prog = await _supabase.from('programas').select('*, clientes(nombre)').eq('id', progId).single();
     if (prog.error) return { success: false, error: 'Programa no encontrado' };
@@ -1117,15 +1118,25 @@ var backendFunctions = {
       .select('usuario_id, rol_programa, usuarios!participantes_programa_usuario_id_fkey(nombre, cargo)')
       .eq('programa_id', progId);
     var participantes = (parts.data || []).filter(function(p) { return p.usuarios; });
-    var totalLideres = participantes.filter(function(p) { return p.rol_programa === 'lider'; }).length;
-    var totalColaboradores = participantes.filter(function(p) { return p.rol_programa === 'colaborador'; }).length;
+    var lideresList = participantes.filter(function(p) { return p.rol_programa === 'lider'; });
+    var colaboradoresList = participantes.filter(function(p) { return p.rol_programa === 'colaborador'; });
+    var totalLideres = lideresList.length;
+    var totalColaboradores = colaboradoresList.length;
 
-    // Encuestas y preguntas
-    var encs = await _supabase.from('encuestas').select('id, tipo, tipo_cuestionario').eq('programa_id', progId);
+    var encs = await _supabase.from('encuestas').select('id, tipo, tipo_cuestionario, estado').eq('programa_id', progId);
+    var encList = encs.data || [];
     var encMap = {};
-    (encs.data || []).forEach(function(e) { encMap[e.id] = e; });
-    var encIds = Object.keys(encMap);
+    encList.forEach(function(e) { encMap[e.id] = e; });
 
+    // Disponibilidad por momento y tipo
+    var disponibilidad = {
+      pre_auto: encList.some(function(e) { return e.tipo === 'pre' && (e.tipo_cuestionario || 'autoevaluacion') === 'autoevaluacion'; }),
+      pre_co: encList.some(function(e) { return e.tipo === 'pre' && e.tipo_cuestionario === 'coevaluacion'; }),
+      post_auto: encList.some(function(e) { return e.tipo === 'post' && (e.tipo_cuestionario || 'autoevaluacion') === 'autoevaluacion'; }),
+      post_co: encList.some(function(e) { return e.tipo === 'post' && e.tipo_cuestionario === 'coevaluacion'; })
+    };
+
+    var encIds = Object.keys(encMap);
     var pregsData = encIds.length > 0
       ? await _supabase.from('preguntas').select('id, competencia_id, encuesta_id').in('encuesta_id', encIds)
       : { data: [] };
@@ -1138,17 +1149,15 @@ var backendFunctions = {
       : { data: [] };
     var respuestas = respsData.data || [];
 
-    // Agregar por competencia: auto (lider-self) y co (colab-to-lider), separando pre/post
+    // Agregar por competencia
     var agregado = {};
     competencias.forEach(function(c) {
       agregado[c.id] = {
-        nombre: c.nombre,
-        descripcion: c.descripcion || '',
-        foco_desarrollo: c.foco_desarrollo || '',
-        auto_pre: [], auto_post: [],
-        co_pre: [], co_post: []
+        nombre: c.nombre, descripcion: c.descripcion || '', foco_desarrollo: c.foco_desarrollo || '',
+        auto_pre: [], auto_post: [], co_pre: [], co_post: []
       };
     });
+    var evaluadoresUnicos = { auto_pre: {}, auto_post: {}, co_pre: {}, co_post: {} };
     respuestas.forEach(function(r) {
       var p = pregMap[r.pregunta_id];
       if (!p || !p.competencia_id || !agregado[p.competencia_id]) return;
@@ -1157,35 +1166,69 @@ var backendFunctions = {
       var v = parseFloat(r.valor);
       if (isNaN(v)) return;
       var tipoCuest = enc.tipo_cuestionario || 'autoevaluacion';
-      var momento = enc.tipo || 'pre';
-      var key = (tipoCuest === 'coevaluacion' ? 'co_' : 'auto_') + momento;
+      var mto = enc.tipo || 'pre';
+      var key = (tipoCuest === 'coevaluacion' ? 'co_' : 'auto_') + mto;
       agregado[p.competencia_id][key].push(v);
+      evaluadoresUnicos[key][r.evaluador_id] = true;
     });
 
     function avg(arr) {
-      if (!arr || arr.length === 0) return 0;
+      if (!arr || arr.length === 0) return null; // null = sin dato
       return Math.round((arr.reduce(function(a, b) { return a + b; }, 0) / arr.length) * 100) / 100;
     }
+    function diff(a, b) {
+      if (a === null || b === null) return null;
+      return Math.round((a - b) * 100) / 100;
+    }
+
+    // Flags de disponibilidad segun el momento pedido
+    var tieneRespuestasPre = respuestas.some(function(r) {
+      var p = pregMap[r.pregunta_id];
+      if (!p) return false;
+      var e = encMap[p.encuesta_id];
+      return e && e.tipo === 'pre';
+    });
+    var tieneRespuestasPost = respuestas.some(function(r) {
+      var p = pregMap[r.pregunta_id];
+      if (!p) return false;
+      var e = encMap[p.encuesta_id];
+      return e && e.tipo === 'post';
+    });
+
+    // Validacion: si piden POST sin PRE historico, marcar flag
+    var sinPreHistorico = (momento === 'post' && !tieneRespuestasPre);
 
     var analisisCompetencias = competencias.map(function(c) {
       var ag = agregado[c.id];
       var autoPre = avg(ag.auto_pre), autoPost = avg(ag.auto_post);
       var coPre = avg(ag.co_pre), coPost = avg(ag.co_post);
-      return {
+      var base = {
         nombre: c.nombre,
         foco_desarrollo: c.foco_desarrollo,
-        auto_pre: autoPre, auto_post: autoPost,
-        co_pre: coPre, co_post: coPost,
-        brecha_pre: Math.round((autoPre - coPre) * 100) / 100,
-        brecha_post: Math.round((autoPost - coPost) * 100) / 100,
-        evolucion_auto: Math.round((autoPost - autoPre) * 100) / 100,
-        evolucion_co: Math.round((coPost - coPre) * 100) / 100
+        auto_pre: autoPre, co_pre: coPre,
+        brecha_pre: diff(autoPre, coPre),
+        n_auto_pre: ag.auto_pre.length,
+        n_co_pre: ag.co_pre.length
       };
+      if (momento === 'post') {
+        base.auto_post = autoPost;
+        base.co_post = coPost;
+        base.brecha_post = diff(autoPost, coPost);
+        base.evolucion_auto = diff(autoPost, autoPre);
+        base.evolucion_co = diff(coPost, coPre);
+        base.cierre_brecha = (base.brecha_pre !== null && base.brecha_post !== null)
+          ? Math.round((Math.abs(base.brecha_pre) - Math.abs(base.brecha_post)) * 100) / 100
+          : null;
+        base.n_auto_post = ag.auto_post.length;
+        base.n_co_post = ag.co_post.length;
+      }
+      return base;
     });
 
     return {
       success: true,
       data: {
+        momento: momento,
         programa: {
           id: prog.data.id,
           nombre: prog.data.nombre,
@@ -1196,14 +1239,21 @@ var backendFunctions = {
         },
         totalLideres: totalLideres,
         totalColaboradores: totalColaboradores,
+        lideresConAuto: Object.keys(evaluadoresUnicos[momento === 'post' ? 'auto_post' : 'auto_pre']).length,
+        colabConCo: Object.keys(evaluadoresUnicos[momento === 'post' ? 'co_post' : 'co_pre']).length,
         totalRespuestas: respuestas.length,
+        tieneRespuestasPre: tieneRespuestasPre,
+        tieneRespuestasPost: tieneRespuestasPost,
+        sinPreHistorico: sinPreHistorico,
+        disponibilidad: disponibilidad,
         competencias: analisisCompetencias
       }
     };
   },
 
-  obtenerDatosInformeIndividual: async function(token, progId, userId) {
+  obtenerDatosInformeIndividual: async function(token, progId, userId, momento) {
     if (!progId || !userId) return { success: false, error: 'Parametros faltantes' };
+    momento = momento || 'post';
 
     var prog = await _supabase.from('programas').select('*, clientes(nombre)').eq('id', progId).single();
     if (prog.error) return { success: false, error: 'Programa no encontrado' };
@@ -1226,7 +1276,6 @@ var backendFunctions = {
     (pregsData.data || []).forEach(function(p) { pregMap[p.id] = p; });
     var pregIds = Object.keys(pregMap);
 
-    // Respuestas DONDE el usuario es el evaluado (tanto auto como co)
     var respsData = pregIds.length > 0
       ? await _supabase.from('respuestas').select('pregunta_id, valor, evaluador_id, evaluado_id')
           .in('pregunta_id', pregIds).eq('evaluado_id', userId)
@@ -1236,10 +1285,8 @@ var backendFunctions = {
     var agregado = {};
     competencias.forEach(function(c) {
       agregado[c.id] = {
-        nombre: c.nombre,
-        foco_desarrollo: c.foco_desarrollo || '',
-        auto_pre: [], auto_post: [],
-        co_pre: [], co_post: []
+        nombre: c.nombre, foco_desarrollo: c.foco_desarrollo || '',
+        auto_pre: [], auto_post: [], co_pre: [], co_post: []
       };
     });
     respuestas.forEach(function(r) {
@@ -1250,35 +1297,61 @@ var backendFunctions = {
       var v = parseFloat(r.valor);
       if (isNaN(v)) return;
       var esAuto = (r.evaluador_id === r.evaluado_id);
-      var momento = enc.tipo || 'pre';
-      var key = (esAuto ? 'auto_' : 'co_') + momento;
+      var mto = enc.tipo || 'pre';
+      var key = (esAuto ? 'auto_' : 'co_') + mto;
       agregado[p.competencia_id][key].push(v);
     });
 
     function avg(arr) {
-      if (!arr || arr.length === 0) return 0;
+      if (!arr || arr.length === 0) return null;
       return Math.round((arr.reduce(function(a, b) { return a + b; }, 0) / arr.length) * 100) / 100;
     }
+    function diff(a, b) {
+      if (a === null || b === null) return null;
+      return Math.round((a - b) * 100) / 100;
+    }
+
+    var tieneRespuestasPre = respuestas.some(function(r) {
+      var p = pregMap[r.pregunta_id]; if (!p) return false;
+      var e = encMap[p.encuesta_id]; return e && e.tipo === 'pre';
+    });
+    var tieneRespuestasPost = respuestas.some(function(r) {
+      var p = pregMap[r.pregunta_id]; if (!p) return false;
+      var e = encMap[p.encuesta_id]; return e && e.tipo === 'post';
+    });
+    var sinPreHistorico = (momento === 'post' && !tieneRespuestasPre);
 
     var analisisCompetencias = competencias.map(function(c) {
       var ag = agregado[c.id];
       var autoPre = avg(ag.auto_pre), autoPost = avg(ag.auto_post);
       var coPre = avg(ag.co_pre), coPost = avg(ag.co_post);
-      return {
+      var base = {
         nombre: c.nombre,
         foco_desarrollo: c.foco_desarrollo,
-        auto_pre: autoPre, auto_post: autoPost,
-        co_pre: coPre, co_post: coPost,
-        brecha_pre: Math.round((autoPre - coPre) * 100) / 100,
-        brecha_post: Math.round((autoPost - coPost) * 100) / 100,
-        evolucion_auto: Math.round((autoPost - autoPre) * 100) / 100,
-        evolucion_co: Math.round((coPost - coPre) * 100) / 100
+        auto_pre: autoPre, co_pre: coPre,
+        brecha_pre: diff(autoPre, coPre),
+        n_auto_pre: ag.auto_pre.length,
+        n_co_pre: ag.co_pre.length
       };
+      if (momento === 'post') {
+        base.auto_post = autoPost;
+        base.co_post = coPost;
+        base.brecha_post = diff(autoPost, coPost);
+        base.evolucion_auto = diff(autoPost, autoPre);
+        base.evolucion_co = diff(coPost, coPre);
+        base.cierre_brecha = (base.brecha_pre !== null && base.brecha_post !== null)
+          ? Math.round((Math.abs(base.brecha_pre) - Math.abs(base.brecha_post)) * 100) / 100
+          : null;
+        base.n_auto_post = ag.auto_post.length;
+        base.n_co_post = ag.co_post.length;
+      }
+      return base;
     });
 
     return {
       success: true,
       data: {
+        momento: momento,
         programa: {
           nombre: prog.data.nombre,
           cliente_nombre: prog.data.clientes ? prog.data.clientes.nombre : ''
@@ -1290,6 +1363,9 @@ var backendFunctions = {
           cargo: usr.data.cargo || ''
         },
         totalRespuestas: respuestas.length,
+        tieneRespuestasPre: tieneRespuestasPre,
+        tieneRespuestasPost: tieneRespuestasPost,
+        sinPreHistorico: sinPreHistorico,
         competencias: analisisCompetencias
       }
     };

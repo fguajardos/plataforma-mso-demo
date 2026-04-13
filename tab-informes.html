@@ -215,38 +215,74 @@
   .rpt-chart { position: relative; height: 260px; margin: 16px 0; }
 </style>
 
-<div>
-  <!-- Action cards -->
-  <div class="flex-between mb-4">
-    <h3 class="informes-section-title">Generar Informes</h3>
+<div id="tab-informes-wrapper">
+  <!-- Guard de acceso: solo admin -->
+  <div id="informes-sin-acceso" class="hidden">
+    <div class="card"><div class="card-body text-center" style="padding:40px;">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:12px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <h3 style="color:#e74c3c;margin:0 0 8px;">Acceso restringido</h3>
+      <p class="text-muted">Solo los administradores pueden generar informes.</p>
+    </div></div>
   </div>
 
-  <div class="informes-actions-grid">
-    <!-- Informe Individual -->
-    <div class="informe-action-card" onclick="window._informeIndividual &amp;&amp; window._informeIndividual()">
-      <div class="action-icon">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+  <div id="informes-contenido-principal">
+    <div id="informes-disponibilidad" class="card mb-4 hidden"><div class="card-body">
+      <h4 style="margin:0 0 12px;font-size:14px;color:var(--color-primario);">Estado de encuestas del programa</h4>
+      <div id="informes-disponibilidad-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:12px;"></div>
+    </div></div>
+
+    <div class="flex-between mb-4">
+      <h3 class="informes-section-title">Informes PRE <span class="badge badge-info" style="font-size:10px;">LINEA BASE</span></h3>
+    </div>
+    <p class="text-muted text-sm mb-3">Diagn&oacute;stico inicial del programa. Disponible una vez cerradas las encuestas Auto PRE y Coeval PRE.</p>
+
+    <div class="informes-actions-grid">
+      <div class="informe-action-card" id="card-individual-pre" onclick="window._informeIndividualPre &amp;&amp; window._informeIndividualPre()">
+        <div class="action-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <div class="action-title">Informe Individual PRE</div>
+        <div class="action-desc">L&iacute;nea base de un l&iacute;der: promedios PRE, brecha inicial y focos a desarrollar.</div>
       </div>
-      <div class="action-title">Generar Informe Individual</div>
-      <div class="action-desc">Selecciona un participante para generar su informe personalizado con IA.</div>
+      <div class="informe-action-card" id="card-consolidado-pre" onclick="window._informeConsolidadoPre &amp;&amp; window._informeConsolidadoPre()">
+        <div class="action-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <div class="action-title">Informe Consolidado PRE</div>
+        <div class="action-desc">Diagn&oacute;stico grupal inicial: promedios por competencia y brechas PRE.</div>
+      </div>
     </div>
 
-    <!-- Informe Consolidado -->
-    <div class="informe-action-card" onclick="window._informeConsolidado &amp;&amp; window._informeConsolidado()">
-      <div class="action-icon">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+    <div class="flex-between mb-4" style="margin-top:32px;">
+      <h3 class="informes-section-title">Informes POST <span class="badge badge-success" style="font-size:10px;">EVOLUCI&Oacute;N</span></h3>
+    </div>
+    <p class="text-muted text-sm mb-3">Informe completo con evoluci&oacute;n PRE&rarr;POST. Requiere que ya existan datos PRE cargados.</p>
+
+    <div class="informes-actions-grid">
+      <div class="informe-action-card" id="card-individual-post" onclick="window._informeIndividualPost &amp;&amp; window._informeIndividualPost()">
+        <div class="action-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <div class="action-title">Informe Individual POST</div>
+        <div class="action-desc">Informe completo: PRE, POST, evoluci&oacute;n y cierre de brecha.</div>
       </div>
-      <div class="action-title">Generar Informe Consolidado</div>
-      <div class="action-desc">Informe global con resultados de todo el programa generado con IA.</div>
+      <div class="informe-action-card" id="card-consolidado-post" onclick="window._informeConsolidadoPost &amp;&amp; window._informeConsolidadoPost()">
+        <div class="action-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <div class="action-title">Informe Consolidado POST</div>
+        <div class="action-desc">Informe global con evoluci&oacute;n grupal, ranking y cierre de brechas.</div>
+      </div>
     </div>
 
-    <!-- Exportar Datos -->
-    <div class="informe-action-card" onclick="window._informeExportar &amp;&amp; window._informeExportar()">
-      <div class="action-icon">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    <div class="informes-actions-grid" style="margin-top:24px;grid-template-columns:1fr;max-width:400px;">
+      <div class="informe-action-card" onclick="window._informeExportar &amp;&amp; window._informeExportar()">
+        <div class="action-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </div>
+        <div class="action-title">Exportar Datos Excel</div>
+        <div class="action-desc">Descarga los datos crudos del programa en formato Excel.</div>
       </div>
-      <div class="action-title">Exportar Datos Excel</div>
-      <div class="action-desc">Descarga los datos crudos del programa en formato Excel.</div>
     </div>
   </div>
 
@@ -318,10 +354,101 @@
   var reporteCharts = [];
   var informeIATipo = '';
   var informeIAPartId = '';
+  var informeIAMomento = 'post'; // 'pre' o 'post'
+  var informesDisponibilidad = null;
 
   (function() {
+    // Guard de acceso: solo admin
+    var rol = null;
+    try {
+      if (typeof App !== 'undefined' && App.getRol) rol = App.getRol();
+      else {
+        var u = JSON.parse(sessionStorage.getItem('tpt_usuario') || 'null');
+        if (u) rol = u.rol;
+      }
+    } catch (e) {}
+    if (rol !== 'admin') {
+      document.getElementById('informes-contenido-principal').classList.add('hidden');
+      document.getElementById('informes-sin-acceso').classList.remove('hidden');
+      return;
+    }
+    cargarDisponibilidadEncuestas();
     cargarInformesGenerados();
   })();
+
+  /* ==========================================
+     DISPONIBILIDAD DE ENCUESTAS (gating)
+     ========================================== */
+
+  function cargarDisponibilidadEncuestas() {
+    google.script.run
+      .withSuccessHandler(function(r) {
+        if (!r || !r.success) return;
+        var encs = r.data || [];
+        var disp = {
+          pre_auto: encs.find(function(e) { return e.tipo === 'pre' && (e.tipo_cuestionario || 'autoevaluacion') === 'autoevaluacion'; }),
+          pre_co: encs.find(function(e) { return e.tipo === 'pre' && e.tipo_cuestionario === 'coevaluacion'; }),
+          post_auto: encs.find(function(e) { return e.tipo === 'post' && (e.tipo_cuestionario || 'autoevaluacion') === 'autoevaluacion'; }),
+          post_co: encs.find(function(e) { return e.tipo === 'post' && e.tipo_cuestionario === 'coevaluacion'; })
+        };
+        informesDisponibilidad = disp;
+        renderDisponibilidadGrid(disp);
+        aplicarGatingCards(disp);
+      })
+      .listarEncuestas(App.token, panelProgramaId);
+  }
+
+  function renderDisponibilidadGrid(disp) {
+    function item(label, enc) {
+      var estado = enc ? (enc.estado || 'borrador') : null;
+      var color, texto;
+      if (!enc) { color = '#95a5a6'; texto = 'No creada'; }
+      else if (estado === 'cerrada') { color = '#27ae60'; texto = 'Cerrada'; }
+      else if (estado === 'activa') { color = '#f39c12'; texto = 'En curso'; }
+      else { color = '#95a5a6'; texto = 'Borrador'; }
+      return '<div style="padding:10px 12px;border:1px solid var(--color-borde);border-radius:8px;background:#f9fafb;">' +
+        '<div style="font-size:11px;color:#7f8c8d;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">' + label + '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:' + color + ';"></span>' +
+        '<span style="font-size:13px;font-weight:600;color:' + color + ';">' + texto + '</span></div>' +
+      '</div>';
+    }
+    var grid = document.getElementById('informes-disponibilidad-grid');
+    grid.innerHTML = item('Auto PRE', disp.pre_auto) + item('Coeval PRE', disp.pre_co) + item('Auto POST', disp.post_auto) + item('Coeval POST', disp.post_co);
+    document.getElementById('informes-disponibilidad').classList.remove('hidden');
+  }
+
+  function aplicarGatingCards(disp) {
+    // PRE listo si al menos una encuesta PRE existe (cerrada o activa con respuestas)
+    var preDisponible = !!(disp.pre_auto || disp.pre_co);
+    var postDisponible = !!(disp.post_auto || disp.post_co);
+
+    function setCardGate(id, disponible, mensaje) {
+      var card = document.getElementById(id);
+      if (!card) return;
+      if (disponible) {
+        card.style.opacity = '';
+        card.style.cursor = 'pointer';
+        card.removeAttribute('data-gated');
+      } else {
+        card.style.opacity = '0.5';
+        card.style.cursor = 'not-allowed';
+        card.setAttribute('data-gated', mensaje);
+      }
+    }
+    setCardGate('card-individual-pre', preDisponible, 'Necesitas crear encuestas PRE primero');
+    setCardGate('card-consolidado-pre', preDisponible, 'Necesitas crear encuestas PRE primero');
+    setCardGate('card-individual-post', postDisponible, 'Necesitas crear encuestas POST primero');
+    setCardGate('card-consolidado-post', postDisponible, 'Necesitas crear encuestas POST primero');
+  }
+
+  function verificarGate(cardId) {
+    var card = document.getElementById(cardId);
+    if (card && card.getAttribute('data-gated')) {
+      showToast(card.getAttribute('data-gated'), 'warning');
+      return false;
+    }
+    return true;
+  }
 
   /* ==========================================
      INFORMES GENERADOS
@@ -402,7 +529,10 @@
      GENERAR INFORME INDIVIDUAL (con IA)
      ========================================== */
 
-  function abrirSelectorParticipante() {
+  function abrirSelectorParticipante(momento) {
+    informeIAMomento = momento || 'post';
+    if (informeIAMomento === 'pre' && !verificarGate('card-individual-pre')) return;
+    if (informeIAMomento === 'post' && !verificarGate('card-individual-post')) return;
     var container = document.getElementById('lista-participantes-informe');
     document.getElementById('buscar-participante-informe').value = '';
     openModal('modal-selector-participante');
@@ -545,14 +675,17 @@
         progress.style.width = '0%';
         showToast('Error al obtener datos del participante', 'error');
       })
-      .obtenerDatosInformeIndividual(App.token, panelProgramaId, participanteId);
+      .obtenerDatosInformeIndividual(App.token, panelProgramaId, participanteId, informeIAMomento);
   }
 
   /* ==========================================
      GENERAR INFORME CONSOLIDADO (con IA)
      ========================================== */
 
-  function generarInformeConsolidado() {
+  function generarInformeConsolidado(momento) {
+    informeIAMomento = momento || 'post';
+    if (informeIAMomento === 'pre' && !verificarGate('card-consolidado-pre')) return;
+    if (informeIAMomento === 'post' && !verificarGate('card-consolidado-post')) return;
     informeIATipo = 'consolidado';
     informeIAPartId = '';
 
@@ -614,7 +747,7 @@
         progress.style.width = '0%';
         showToast('Error al obtener datos del programa', 'error');
       })
-      .obtenerDatosInformeConsolidado(App.token, panelProgramaId);
+      .obtenerDatosInformeConsolidado(App.token, panelProgramaId, informeIAMomento);
   }
 
   /* ==========================================
@@ -648,11 +781,18 @@
 
   function buildConsolidadoPrompt(prog, datos) {
     var dataJson = datos ? JSON.stringify(datos, null, 2) : '{}';
-    return 'Eres un consultor experto en desarrollo de liderazgo. Genera un INFORME EJECUTIVO CONSOLIDADO del programa "' + prog.nombre + '" basandote en los DATOS REALES siguientes.\n\n' +
+    var momento = (datos && datos.momento) || 'post';
+    var esPost = momento === 'post';
+    var tituloInforme = esPost ? 'INFORME EJECUTIVO CONSOLIDADO POST' : 'INFORME DIAGNOSTICO CONSOLIDADO PRE (LINEA BASE)';
+    var instrMomento = esPost
+      ? 'Este es un informe POST: analiza la EVOLUCION del programa comparando PRE (auto_pre, co_pre) vs POST (auto_post, co_post). Cita evolucion_auto, evolucion_co y cierre_brecha. Si sinPreHistorico=true, NO inventes evolucion: indica que no hay linea base PRE para comparar y analiza solo los datos POST.'
+      : 'Este es un informe PRE de linea base: analiza SOLO los datos PRE (auto_pre, co_pre, brecha_pre). NO menciones evolucion, POST, ni cierre de brecha porque no existen todavia. El objetivo es diagnosticar la situacion inicial y definir focos de desarrollo.';
+
+    return 'Eres un consultor experto en desarrollo de liderazgo. Genera un ' + tituloInforme + ' del programa "' + prog.nombre + '" basandote en los DATOS REALES siguientes.\n\n' +
       'DATOS DEL PROGRAMA:\n' + dataJson + '\n\n' +
       'Los valores van de 1 a 4 (1=no aplica, 2=aplica con guia, 3=aplica consistente, 4=es referente). ' +
-      'brecha_pre/post = autopercepcion - percepcion de colaboradores. Valores positivos indican sobrestimacion. ' +
-      'evolucion_auto/co = cambio del PRE al POST. ' +
+      'brecha_pre/post = autopercepcion - percepcion de colaboradores. Valores positivos indican sobrestimacion. Null = sin dato.\n\n' +
+      instrMomento + '\n\n' +
       'Responde SOLO con JSON (sin markdown ni backticks) con esta estructura exacta:\n' +
       '{"intro":"<html breve describiendo el informe citando nombre del programa y numero de lideres>",' +
       '"hallazgos":[{"titulo":"...","texto":"..."},{"titulo":"...","texto":"..."},{"titulo":"...","texto":"..."}],' +
@@ -660,26 +800,33 @@
       '"conclusiones":["<conclusion 1 basada en datos>","<conclusion 2>","<conclusion 3>","<conclusion 4>"],' +
       '"recomendaciones":[{"titulo":"...","texto":"..."},{"titulo":"...","texto":"..."},{"titulo":"...","texto":"..."},{"titulo":"...","texto":"..."}],' +
       '"cierre":"<html cierre ejecutivo>"}.\n' +
-      'Usa <strong> para negritas. Cita numeros concretos de los datos (ej: "la brecha de 0.33 en Delegacion"). ' +
-      'Si no hay respuestas (totalRespuestas=0), el informe debe indicarlo y ofrecer recomendaciones generales.';
+      'Usa <strong> para negritas. Cita numeros concretos (ej: "la brecha de 0.33 en Delegacion"). ' +
+      'Si totalRespuestas=0, el informe debe indicar que aun no hay datos cargados y ofrecer recomendaciones generales sobre el programa y las competencias.';
   }
 
   function buildIndividualPrompt(prog, part, datos) {
     var dataJson = datos ? JSON.stringify(datos, null, 2) : '{}';
     var nombre = part ? (part.nombre_completo || part.nombre || 'Participante') : 'Participante';
-    return 'Eres un coach ejecutivo. Genera un INFORME INDIVIDUAL para "' + nombre + '" en el programa "' + prog.nombre + '" basandote en los DATOS REALES siguientes.\n\n' +
+    var momento = (datos && datos.momento) || 'post';
+    var esPost = momento === 'post';
+    var tituloInforme = esPost ? 'INFORME INDIVIDUAL POST (completo con evolucion)' : 'INFORME INDIVIDUAL PRE (linea base / diagnostico inicial)';
+    var instrMomento = esPost
+      ? 'Este es un informe POST: analiza la EVOLUCION del lider comparando PRE vs POST (evolucion_auto, evolucion_co, cierre_brecha). Si sinPreHistorico=true, indica que no hay linea base PRE y analiza solo los datos POST.'
+      : 'Este es un informe PRE de linea base: analiza SOLO los datos PRE (auto_pre, co_pre, brecha_pre). NO menciones evolucion ni POST porque no existen. El objetivo es identificar focos de desarrollo iniciales del lider.';
+
+    return 'Eres un coach ejecutivo. Genera un ' + tituloInforme + ' para "' + nombre + '" en el programa "' + prog.nombre + '" basandote en los DATOS REALES siguientes.\n\n' +
       'DATOS DEL PARTICIPANTE:\n' + dataJson + '\n\n' +
       'Los valores van de 1 a 4. auto_pre/post = autoevaluacion del lider. co_pre/post = evaluacion de sus colaboradores. ' +
-      'brecha = diferencia entre autopercepcion y percepcion de colaboradores (positivo = se sobrevalora). ' +
-      'evolucion = cambio del PRE al POST. ' +
+      'brecha = auto - co (positivo = se sobrevalora). Null = sin dato.\n\n' +
+      instrMomento + '\n\n' +
       'Responde SOLO con JSON (sin markdown ni backticks) con esta estructura exacta:\n' +
       '{"lectura_global":"<html lectura global del perfil del lider citando datos concretos>",' +
       '"analisis_competencias":[{"nombre":"<nombre competencia real>","brecha":"<descripcion cuantificada>","interpretacion":"...","evolucion":["<punto 1>","<punto 2>"]}],' +
       '"insight":"<frase clave del siguiente nivel de desarrollo>",' +
       '"recomendaciones":[{"titulo":"...","items":["...","..."]},{"titulo":"...","items":["...","..."]},{"titulo":"...","items":["...","..."]}],' +
       '"compromiso":"<html compromiso de desarrollo especifico>"}.\n' +
-      'Genera un objeto en analisis_competencias por CADA competencia real del participante. Usa <strong> para negritas. ' +
-      'Si no hay respuestas (totalRespuestas=0), indicalo y ofrece recomendaciones generales basadas en el nombre y foco de las competencias.';
+      'Genera un objeto en analisis_competencias por CADA competencia real. Si es PRE, en "evolucion" pon observaciones iniciales (no cambios). Usa <strong> para negritas. ' +
+      'Si totalRespuestas=0, indicalo y ofrece recomendaciones generales basadas en el nombre y foco de las competencias.';
   }
 
   /* ==========================================
@@ -690,30 +837,41 @@
     reporteCharts.forEach(function(c) { c.destroy(); }); reporteCharts = [];
     var hoy = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' });
 
-    // Datos reales desde Supabase (via obtenerDatosInformeConsolidado)
     var datosReales = ia && ia._datosReales;
+    var momento = datosReales ? (datosReales.momento || 'post') : 'post';
+    var esPost = momento === 'post';
     var dims, autoPromedio, coPromedio, brechaGeneral;
+    function num(v) { return (v === null || v === undefined || isNaN(v)) ? 0 : v; }
+    function fmt(v) { return (v === null || v === undefined) ? 's/d' : (typeof v === 'number' ? v.toFixed(2) : v); }
     if (datosReales && datosReales.competencias && datosReales.competencias.length > 0) {
       dims = datosReales.competencias.map(function(c) {
-        var auto = c.auto_post > 0 ? c.auto_post : c.auto_pre;
-        var co = c.co_post > 0 ? c.co_post : c.co_pre;
-        return { nombre: c.nombre, auto: auto, co: co, brecha: Math.round((auto - co) * 100) / 100 };
+        // En PRE solo hay *_pre. En POST priorizamos *_post pero caemos a *_pre si POST es null
+        var auto = esPost ? (c.auto_post !== null ? c.auto_post : c.auto_pre) : c.auto_pre;
+        var co = esPost ? (c.co_post !== null ? c.co_post : c.co_pre) : c.co_pre;
+        return {
+          nombre: c.nombre,
+          auto: num(auto), co: num(co),
+          brecha: (auto !== null && co !== null) ? Math.round((auto - co) * 100) / 100 : null,
+          evolucion_auto: esPost ? c.evolucion_auto : null,
+          evolucion_co: esPost ? c.evolucion_co : null,
+          sinDato: (auto === null && co === null)
+        };
       });
-      var totalAuto = dims.reduce(function(a, b) { return a + b.auto; }, 0);
-      var totalCo = dims.reduce(function(a, b) { return a + b.co; }, 0);
-      autoPromedio = dims.length > 0 ? Math.round((totalAuto / dims.length) * 100) / 100 : 0;
-      coPromedio = dims.length > 0 ? Math.round((totalCo / dims.length) * 100) / 100 : 0;
+      var dimsConDato = dims.filter(function(d) { return !d.sinDato; });
+      var totalAuto = dimsConDato.reduce(function(a, b) { return a + b.auto; }, 0);
+      var totalCo = dimsConDato.reduce(function(a, b) { return a + b.co; }, 0);
+      autoPromedio = dimsConDato.length > 0 ? Math.round((totalAuto / dimsConDato.length) * 100) / 100 : 0;
+      coPromedio = dimsConDato.length > 0 ? Math.round((totalCo / dimsConDato.length) * 100) / 100 : 0;
       brechaGeneral = Math.round((autoPromedio - coPromedio) * 100) / 100;
     } else {
-      dims = [];
-      autoPromedio = 0; coPromedio = 0; brechaGeneral = 0;
+      dims = []; autoPromedio = 0; coPromedio = 0; brechaGeneral = 0;
     }
 
     var html = '<div class="rpt" id="pdf-page">';
 
     /* Hero */
     html += '<div class="rpt-hero">';
-    html += '<h1>INFORME EJECUTIVO CONSOLIDADO</h1>';
+    html += '<h1>INFORME ' + (esPost ? 'EJECUTIVO CONSOLIDADO POST' : 'DIAGN\u00d3STICO CONSOLIDADO PRE') + '</h1>';
     html += '<h2>Evaluaci\u00f3n de Liderazgo \u2013 ' + escapeHtml(prog.nombre) + '</h2>';
     html += '<div class="rpt-meta">' + escapeHtml(prog.cliente_nombre) + ' | Generado el ' + hoy + '</div>';
     html += '</div>';
@@ -723,13 +881,31 @@
     /* Intro */
     html += '<div class="rpt-intro">' + (ia.intro || 'El presente informe consolida los resultados de evaluaci\u00f3n de liderazgo, considerando las competencias del modelo aplicado. El an\u00e1lisis considera autoevaluaciones, coevaluaciones cuando est\u00e1n disponibles y la identificaci\u00f3n de brechas de percepci\u00f3n.') + '</div>';
 
-    /* Cobertura KPIs */
+    /* Cobertura KPIs (desde datos reales) */
+    var totalLideres = datosReales ? (datosReales.totalLideres || 0) : 0;
+    var lideresConAuto = datosReales ? (datosReales.lideresConAuto || 0) : 0;
+    var colabConCo = datosReales ? (datosReales.colabConCo || 0) : 0;
+    var totalColab = datosReales ? (datosReales.totalColaboradores || 0) : 0;
     html += '<div class="rpt-section"><div class="rpt-section-title">Cobertura de evaluaci\u00f3n</div>';
     html += '<div class="rpt-kpi-row">';
-    html += '<div class="rpt-kpi-big"><div class="rpt-kpi-big-value">8</div><div class="rpt-kpi-big-label">L\u00edderes evaluados</div></div>';
-    html += '<div class="rpt-kpi-big"><div class="rpt-kpi-big-value">6</div><div class="rpt-kpi-big-label">L\u00edderes con coevaluaci\u00f3n</div></div>';
-    html += '<div class="rpt-kpi-big"><div class="rpt-kpi-big-value">2</div><div class="rpt-kpi-big-label">L\u00edderes sin coevaluaci\u00f3n</div></div>';
+    html += '<div class="rpt-kpi-big"><div class="rpt-kpi-big-value">' + totalLideres + '</div><div class="rpt-kpi-big-label">L\u00edderes en el programa</div></div>';
+    html += '<div class="rpt-kpi-big"><div class="rpt-kpi-big-value">' + lideresConAuto + '/' + totalLideres + '</div><div class="rpt-kpi-big-label">Autoevaluaciones completadas</div></div>';
+    html += '<div class="rpt-kpi-big"><div class="rpt-kpi-big-value">' + colabConCo + '/' + totalColab + '</div><div class="rpt-kpi-big-label">Coevaluaciones completadas</div></div>';
     html += '</div></div>';
+
+    /* Advertencia si POST sin PRE historico */
+    if (datosReales && datosReales.sinPreHistorico) {
+      html += '<div style="background:#fef3e2;border-left:4px solid #f39c12;padding:12px 16px;margin:16px 0;border-radius:6px;">' +
+        '<strong style="color:#e67e22;">\u26A0 Sin l\u00ednea base PRE:</strong> ' +
+        '<span style="color:#7d5a1a;">Este informe POST no puede calcular evoluci\u00f3n porque no existen datos PRE cargados. Se presentan solo los resultados POST.</span>' +
+      '</div>';
+    }
+    if (datosReales && datosReales.totalRespuestas === 0) {
+      html += '<div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:12px 16px;margin:16px 0;border-radius:6px;">' +
+        '<strong style="color:#1e40af;">\u2139 Sin respuestas cargadas:</strong> ' +
+        '<span style="color:#1e3a8a;">A\u00fan no hay evaluaciones completadas en este programa. El informe muestra la estructura y recomendaciones generales.</span>' +
+      '</div>';
+    }
 
     /* Resultados: tablas lado a lado */
     html += '<div class="rpt-section"><div class="rpt-section-title">Resultados consolidados</div>';
@@ -844,19 +1020,27 @@
     var hoy = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' });
     var nombre = part ? (part.nombre_completo || part.nombre || 'Participante') : 'Participante';
 
-    // Datos reales desde Supabase
     var datosReales = ia && ia._datosReales;
+    var momento = datosReales ? (datosReales.momento || 'post') : 'post';
+    var esPost = momento === 'post';
     var dims, autoP, coP, brechaG;
+    function numI(v) { return (v === null || v === undefined || isNaN(v)) ? 0 : v; }
     if (datosReales && datosReales.competencias && datosReales.competencias.length > 0) {
       dims = datosReales.competencias.map(function(c) {
-        var auto = c.auto_post > 0 ? c.auto_post : c.auto_pre;
-        var co = c.co_post > 0 ? c.co_post : c.co_pre;
-        return { nombre: c.nombre, auto: auto, co: co, brecha: Math.round((auto - co) * 100) / 100 };
+        var auto = esPost ? (c.auto_post !== null ? c.auto_post : c.auto_pre) : c.auto_pre;
+        var co = esPost ? (c.co_post !== null ? c.co_post : c.co_pre) : c.co_pre;
+        return {
+          nombre: c.nombre,
+          auto: numI(auto), co: numI(co),
+          brecha: (auto !== null && co !== null) ? Math.round((auto - co) * 100) / 100 : null,
+          sinDato: (auto === null && co === null)
+        };
       });
-      var tA = dims.reduce(function(a, b) { return a + b.auto; }, 0);
-      var tC = dims.reduce(function(a, b) { return a + b.co; }, 0);
-      autoP = dims.length > 0 ? Math.round((tA / dims.length) * 100) / 100 : 0;
-      coP = dims.length > 0 ? Math.round((tC / dims.length) * 100) / 100 : 0;
+      var dimsConDato = dims.filter(function(d) { return !d.sinDato; });
+      var tA = dimsConDato.reduce(function(a, b) { return a + b.auto; }, 0);
+      var tC = dimsConDato.reduce(function(a, b) { return a + b.co; }, 0);
+      autoP = dimsConDato.length > 0 ? Math.round((tA / dimsConDato.length) * 100) / 100 : 0;
+      coP = dimsConDato.length > 0 ? Math.round((tC / dimsConDato.length) * 100) / 100 : 0;
       brechaG = Math.round((autoP - coP) * 100) / 100;
     } else {
       dims = []; autoP = 0; coP = 0; brechaG = 0;
@@ -866,12 +1050,26 @@
 
     /* Hero */
     html += '<div class="rpt-hero">';
-    html += '<h1>Informe Ejecutivo de Liderazgo</h1>';
-    html += '<h2>Evaluaci\u00f3n Individual \u2013 ' + escapeHtml(nombre) + '</h2>';
+    html += '<h1>' + (esPost ? 'Informe Individual POST' : 'Informe Individual PRE (L\u00ednea base)') + '</h1>';
+    html += '<h2>Evaluaci\u00f3n de Liderazgo \u2013 ' + escapeHtml(nombre) + '</h2>';
     html += '<div class="rpt-meta">' + escapeHtml(prog.nombre) + ' | ' + escapeHtml(prog.cliente_nombre) + ' | ' + hoy + '</div>';
     html += '</div>';
 
     html += '<div class="rpt-body">';
+
+    /* Advertencia si POST sin PRE historico */
+    if (datosReales && datosReales.sinPreHistorico) {
+      html += '<div style="background:#fef3e2;border-left:4px solid #f39c12;padding:12px 16px;margin-bottom:20px;border-radius:6px;">' +
+        '<strong style="color:#e67e22;">\u26A0 Sin l\u00ednea base PRE:</strong> ' +
+        '<span style="color:#7d5a1a;">No existen datos PRE para este participante, por lo que no se puede calcular evoluci\u00f3n. Se presentan solo los resultados POST.</span>' +
+      '</div>';
+    }
+    if (datosReales && datosReales.totalRespuestas === 0) {
+      html += '<div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:12px 16px;margin-bottom:20px;border-radius:6px;">' +
+        '<strong style="color:#1e40af;">\u2139 Sin respuestas cargadas:</strong> ' +
+        '<span style="color:#1e3a8a;">Este informe se genera sin datos de evaluaciones. Completa las encuestas del programa para obtener m\u00e9tricas reales.</span>' +
+      '</div>';
+    }
 
     /* 1. Contexto + Competencias */
     html += '<div class="rpt-section"><div class="rpt-section-title">1. Contexto de Evaluaci\u00f3n</div>';
@@ -1042,8 +1240,13 @@
   }
 
   // Register all functions globally (required for dynamic script execution)
-  window._informeIndividual = abrirSelectorParticipante;
-  window._informeConsolidado = generarInformeConsolidado;
+  window._informeIndividualPre = function() { abrirSelectorParticipante('pre'); };
+  window._informeIndividualPost = function() { abrirSelectorParticipante('post'); };
+  window._informeConsolidadoPre = function() { generarInformeConsolidado('pre'); };
+  window._informeConsolidadoPost = function() { generarInformeConsolidado('post'); };
+  // Legacy (por compatibilidad)
+  window._informeIndividual = function() { abrirSelectorParticipante('post'); };
+  window._informeConsolidado = function() { generarInformeConsolidado('post'); };
   window._informeExportar = exportarDatosExcel;
   window._informePDF = descargarPDFInforme;
   window._informeCerrar = cerrarVistaPrevia;
