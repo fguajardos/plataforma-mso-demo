@@ -159,7 +159,15 @@ var backendFunctions = {
   },
 
   listarProgramasDashboard: async function(token, userId) {
-    if (!userId) {
+    // Detectar rol del usuario actual desde sessionStorage
+    var rol = null;
+    try {
+      var u = JSON.parse(sessionStorage.getItem('tpt_usuario') || 'null');
+      if (u) rol = u.rol;
+    } catch (e) {}
+
+    // Admin o usuario sin id -> devolver todos los programas
+    if (!userId || rol === 'admin') {
       var r = await _supabase.from('programas').select('*, clientes(nombre)').order('created_at', { ascending: false });
       var data = (r.data || []).map(function(p) {
         p.cliente_nombre = p.clientes ? p.clientes.nombre : '';
@@ -168,7 +176,7 @@ var backendFunctions = {
       });
       return { success: true, data: data };
     }
-    // Filtrar por usuario
+    // Otros roles -> filtrar por participantes_programa
     var pp = await _supabase.from('participantes_programa').select('programa_id').eq('usuario_id', userId);
     var progIds = (pp.data || []).map(function(p) { return p.programa_id; });
     if (progIds.length === 0) return { success: true, data: [] };
