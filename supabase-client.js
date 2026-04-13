@@ -453,7 +453,50 @@ var backendFunctions = {
     var query = _supabase.from('encuestas').select('*').order('created_at', { ascending: false });
     if (progId) query = query.eq('programa_id', progId);
     var r = await query;
-    return { success: true, data: r.data || [] };
+    var encuestas = r.data || [];
+    if (encuestas.length === 0) return { success: true, data: [] };
+
+    // Para cada encuesta, calcular: num_preguntas, total_respuestas (evaluadores distintos), total_esperadas
+    var encIds = encuestas.map(function(e) { return e.id; });
+
+    // Contar preguntas por encuesta
+    var pregs = await _supabase.from('preguntas').select('encuesta_id').in('encuesta_id', encIds);
+    var pregsPorEnc = {};
+    (pregs.data || []).forEach(function(p) {
+      pregsPorEnc[p.encuesta_id] = (pregsPorEnc[p.encuesta_id] || 0) + 1;
+    });
+
+    // Obtener respuestas (solo evaluador_id + encuesta_id) para contar evaluadores distintos
+    var resp = await _supabase.from('respuestas').select('encuesta_id, evaluador_id').in('encuesta_id', encIds);
+    var evalsPorEnc = {};
+    (resp.data || []).forEach(function(rr) {
+      if (!evalsPorEnc[rr.encuesta_id]) evalsPorEnc[rr.encuesta_id] = {};
+      evalsPorEnc[rr.encuesta_id][rr.evaluador_id] = true;
+    });
+
+    // Calcular esperadas por programa_id: lideres para auto, colaboradores para co
+    var progsEnc = {};
+    encuestas.forEach(function(e) { progsEnc[e.programa_id] = true; });
+    var pp = await _supabase.from('participantes_programa').select('programa_id, rol_programa')
+      .in('programa_id', Object.keys(progsEnc));
+    var countsPorPrograma = {};
+    (pp.data || []).forEach(function(x) {
+      if (!countsPorPrograma[x.programa_id]) countsPorPrograma[x.programa_id] = { lider: 0, colaborador: 0 };
+      if (x.rol_programa === 'lider') countsPorPrograma[x.programa_id].lider++;
+      else if (x.rol_programa === 'colaborador') countsPorPrograma[x.programa_id].colaborador++;
+    });
+
+    var data = encuestas.map(function(e) {
+      var counts = countsPorPrograma[e.programa_id] || { lider: 0, colaborador: 0 };
+      var esperadas = (e.tipo_cuestionario === 'coevaluacion') ? counts.colaborador : counts.lider;
+      var evalsMap = evalsPorEnc[e.id] || {};
+      var respondidas = Object.keys(evalsMap).length;
+      e.num_preguntas = pregsPorEnc[e.id] || 0;
+      e.total_respuestas = respondidas;
+      e.total_esperadas = esperadas;
+      return e;
+    });
+    return { success: true, data: data };
   },
 
   crearEncuesta: async function(token, datos) {
@@ -627,9 +670,59 @@ var backendFunctions = {
   // ============================================
   // RESPUESTAS
   // ============================================
-  enviarRespuestas: async function(token, datos) {
-    if (datos.respuestas && datos.respuestas.length > 0) {
-      await _supabase.from('respuestas').upsert(datos.respuestas);
+  enviarRespuestas: async function(token, encuestaId, respuestas) {
+    // Obtener usuario actual
+    var userId = null;
+    try {
+      var u = JSON.parse(sessionStorage.getItem('tpt_usuario') || 'null');
+      if (u && u.id) userId = u.id;
+    } catch (e) {}
+    if (!userId) return { success: false, error: 'Usuario no identificado' };
+
+    // Normalizar argumentos: aceptar signature vieja (token, {respuestas:[...]})
+    if (typeof encuestaId === 'object' && encuestaId !== null) {
+      respuestas = encuestaId.respuestas;
+      encuestaId = encuestaId.encuestaId || encuestaId.encuesta_id;
+    }
+    if (!encuestaId || !respuestas || respuestas.length === 0) {
+      return { success: false, error: 'Faltan datos de la encuesta' };
+    }
+
+    // Obtener info de la encuesta para saber si es auto o co
+    var encR = await _supabase.from('encuestas').select('tipo_cuestionario, programa_id').eq('id', encuestaId).single();
+    if (encR.error || !encR.data) return { success: false, error: 'Encuesta no encontrada' };
+    var tipoCuest = encR.data.tipo_cuestionario || 'autoevaluacion';
+
+    // Determinar evaluado_id
+    var evaluadoId = userId;  // default: autoevaluacion = self
+    if (tipoCuest === 'coevaluacion') {
+      // El colaborador evalua a su lider
+      var pp = await _supabase.from('participantes_programa')
+        .select('lider_id').eq('usuario_id', userId).eq('programa_id', encR.data.programa_id).maybeSingle();
+      if (pp.data && pp.data.lider_id) {
+        evaluadoId = pp.data.lider_id;
+      } else {
+        return { success: false, error: 'No tienes un lider asignado para esta coevaluacion' };
+      }
+    }
+
+    // Construir filas con todos los campos requeridos
+    var rows = respuestas.map(function(r) {
+      return {
+        encuesta_id: encuestaId,
+        pregunta_id: r.preguntaId || r.pregunta_id,
+        evaluador_id: userId,
+        evaluado_id: evaluadoId,
+        valor: String(r.valor != null ? r.valor : '')
+      };
+    });
+
+    var up = await _supabase.from('respuestas').upsert(rows, {
+      onConflict: 'encuesta_id,pregunta_id,evaluador_id,evaluado_id'
+    });
+    if (up.error) {
+      console.error('[enviarRespuestas] error', up.error);
+      return { success: false, error: up.error.message };
     }
     return { success: true, data: { message: 'Respuestas registradas.' } };
   },
@@ -810,11 +903,31 @@ var backendFunctions = {
     var asociados = parts.data || [];
     var lideres = asociados.filter(function(a) { return a.rol_programa === 'lider'; }).length;
     var colaboradores = asociados.filter(function(a) { return a.rol_programa === 'colaborador'; }).length;
+
+    // Encuestas del programa con su tipo_cuestionario
+    var encs = await _supabase.from('encuestas').select('id, tipo_cuestionario').eq('programa_id', progId);
+    var autoIds = [], coIds = [];
+    (encs.data || []).forEach(function(e) {
+      if (e.tipo_cuestionario === 'coevaluacion') coIds.push(e.id);
+      else autoIds.push(e.id);
+    });
+
+    async function contarEvaluadoresUnicos(encIds) {
+      if (encIds.length === 0) return 0;
+      var r = await _supabase.from('respuestas').select('evaluador_id').in('encuesta_id', encIds);
+      var set = {};
+      (r.data || []).forEach(function(x) { set[x.evaluador_id] = true; });
+      return Object.keys(set).length;
+    }
+
+    var autoCompletadas = await contarEvaluadoresUnicos(autoIds);
+    var coCompletadas = await contarEvaluadoresUnicos(coIds);
+
     return {
       totalLideres: lideres,
       totalColaboradores: colaboradores,
-      autoevaluacionesCompletadas: 0,
-      coevaluacionesCompletadas: 0,
+      autoevaluacionesCompletadas: autoCompletadas,
+      coevaluacionesCompletadas: coCompletadas,
       observacionesRealizadas: 0,
       evaluaciones: []
     };
